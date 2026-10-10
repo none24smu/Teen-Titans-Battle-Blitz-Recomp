@@ -96,8 +96,12 @@ and that the recompiled scripts decompile back to the same source. Notes:
 ## Playing it
 
 ```powershell
-scripts\build.ps1; scripts\serve.ps1
+scripts\build.ps1; bash scripts/build-player.sh; scripts\serve.ps1
 ```
+
+`build-player` builds the patched browser player: dirplayer-rs with fixes for the Director
+behaviours the game relies on. It needs Rust and Node.js; see [docs/PLAYER.md](docs/PLAYER.md).
+The game itself runs unmodified.
 
 Open <http://localhost:8000/platforms/web/shockwave.html> for the game (dirplayer-rs) or
 <http://localhost:8000/platforms/web/> for the Flash hub (Ruffle). Controls: arrows,

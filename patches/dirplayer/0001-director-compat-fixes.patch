@@ -1,0 +1,259 @@
+diff --git a/vm-rust/src/player/bytecode/flow_control.rs b/vm-rust/src/player/bytecode/flow_control.rs
+index adf4ab2..e84c8bd 100644
+--- a/vm-rust/src/player/bytecode/flow_control.rs
++++ b/vm-rust/src/player/bytecode/flow_control.rs
+@@ -131,6 +131,39 @@ impl FlowControlBytecodeHandler {
+             (name, args, is_no_ret, target)
+         };
+ 
++        // `go` inside `tell sprite(<film loop>)` moves that film loop's own playhead,
++        // as in Director, not the movie's. (Teen Titans Battle Blitz rewinds its
++        // START button's hover animation with `tell sprite(n) go(1) end tell`; run on
++        // the movie, that sent the whole game back to frame 1.)
++        if target.is_none() && name.eq_ignore_ascii_case("go") {
++            let handled = reserve_player_mut(|player| {
++                let film_loop = player.tell_target_stack.last().and_then(|t| t.film_loop.clone());
++                let Some(member_ref) = film_loop else { return false };
++                let frame = match arg_ref_list.first().map(|r| player.get_datum(r).int_value()) {
++                    Some(Ok(f)) => f.max(1) as u32,
++                    _ => return false,
++                };
++                match player.movie.cast_manager.find_member_by_ref_mut(&member_ref) {
++                    Some(member) => match &mut member.member_type {
++                        crate::player::cast_member::CastMemberType::FilmLoop(fl) => {
++                            fl.current_frame = frame;
++                            true
++                        }
++                        _ => false,
++                    },
++                    None => false,
++                }
++            });
++            if handled {
++                if !is_no_ret {
++                    reserve_player_mut(|player| {
++                        player.scopes.get_mut(ctx.scope_ref).unwrap().stack.push(DatumRef::Void);
++                    });
++                }
++                return Ok(HandlerExecutionResult::Advance);
++            }
++        }
++
+         let nested_id = match target {
+             Some(id) => id,
+             None => {
+diff --git a/vm-rust/src/player/handlers/datum_handlers/rect.rs b/vm-rust/src/player/handlers/datum_handlers/rect.rs
+index dfbbfd7..200bc43 100644
+--- a/vm-rust/src/player/handlers/datum_handlers/rect.rs
++++ b/vm-rust/src/player/handlers/datum_handlers/rect.rs
+@@ -113,11 +113,13 @@ impl RectDatumHandlers {
+             let (r1, _f1) = player.get_datum(datum).to_rect_inline()?;
+             let (r2, _f2) = player.get_datum(&args[0]).to_rect_inline()?;
+ 
+-            // intersect uses min/max
+-            let l = r1[0].min(r2[0]);
+-            let t = r1[1].min(r2[1]);
+-            let r = r1[2].max(r2[2]);
+-            let b = r1[3].max(r2[3]);
++            // The overlap of the two rects, or rect(0, 0, 0, 0) when they don't
++            // overlap. (This used min/max the other way round and returned the
++            // union, so every hit test in Teen Titans Battle Blitz succeeded.)
++            let (mut l, mut t, mut r, mut b) = (r1[0].max(r2[0]), r1[1].max(r2[1]), r1[2].min(r2[2]), r1[3].min(r2[3]));
++            if l >= r || t >= b {
++                l = 0.0; t = 0.0; r = 0.0; b = 0.0;
++            }
+ 
+             // Use from_f64 logic for flags
+             let result = Datum::build_rect(
+diff --git a/vm-rust/src/player/score.rs b/vm-rust/src/player/score.rs
+index 0890a4e..2e7a4dd 100644
+--- a/vm-rust/src/player/score.rs
++++ b/vm-rust/src/player/score.rs
+@@ -4179,6 +4179,16 @@ fn resolve_sprite_member_assignment(
+                     let (l, t, r, b) = flash.effective_rect();
+                     Some(((r - l) as i32, (b - t) as i32))
+                 }
++                // A film loop's natural size is its info rect (left, top, right, bottom are
++                // stored as reg_point.0, reg_point.1, width, height), as for any member.
++                // Without this a script-assigned loop kept whatever size the channel had,
++                // which drew Teen Titans Battle Blitz's "selected" portrait loops at the
++                // wrong size and spilled them over their neighbours.
++                CastMemberType::FilmLoop(fl) => {
++                    let w = fl.info.width as i32 - fl.info.reg_point.0 as i32;
++                    let h = fl.info.height as i32 - fl.info.reg_point.1 as i32;
++                    if w > 0 && h > 0 { Some((w, h)) } else { None }
++                }
+                 _ => None,
+             };
+             let is_film_loop = matches!(&m.member_type, CastMemberType::FilmLoop(_));
+diff --git a/vm-rust/src/player/sprite.rs b/vm-rust/src/player/sprite.rs
+index 47ce8af..22659a1 100644
+--- a/vm-rust/src/player/sprite.rs
++++ b/vm-rust/src/player/sprite.rs
+@@ -316,10 +316,13 @@ impl Sprite {
+     }
+ 
+     pub fn reset_for_member_change(&mut self) {
+-        self.skew = 0.0;
+-        self.flip_h = false;
+-        self.flip_v = false;
+-        self.rotation = 0.0;
++        // Director keeps a sprite's flipH/flipV, rotation and skew across a member
++        // swap, just like its colours (see below). Resetting them here broke games
++        // that set a flip once and then animate by swapping members: Teen Titans
++        // Battle Blitz builds its health bars from flipped pieces whose member
++        // changes with every hit, so every flipped piece drew unmirrored and in
++        // the wrong place. The Score path re-applies its own flip bits right after
++        // setting the member, so score-driven sprites are unaffected.
+         // Colours are NOT reset here. Director keeps a sprite's foreColor and
+         // backColor across a member swap — "if a sprite channel is not a
+         // puppet, any changes that script makes to a sprite last for the life
+diff --git a/vm-rust/src/rendering.rs b/vm-rust/src/rendering.rs
+index eea9638..376843e 100644
+--- a/vm-rust/src/rendering.rs
++++ b/vm-rust/src/rendering.rs
+@@ -1730,6 +1730,7 @@ fn render_filmloop_from_channel_data(
+                         ink: 0,
+                         color: child_color.clone(),
+                         bg_color: child_bg_color.clone(),
++                        direct: false,
+                     }),
+                 );
+ 
+@@ -1788,6 +1789,9 @@ pub struct FilmLoopParentProps {
+     pub ink: u32,
+     pub color: ColorRef,
+     pub bg_color: ColorRef,
++    /// Render the loop's sprites straight onto the destination (the stage), as
++    /// Director does, instead of into a cleared intermediate bitmap.
++    pub direct: bool,
+ }
+ 
+ /// Render a score to a bitmap with an optional coordinate offset.
+@@ -1810,13 +1814,15 @@ pub fn render_score_to_bitmap_with_offset(
+     // For filmloops, use transparent background so sprites composite correctly
+     // onto the stage without a solid background color showing through.
+     if let ScoreRef::FilmLoop(member_ref) = score_source {
+-        // Clear with transparent pixels for filmloop
+-        bitmap.clear_rect_transparent(
+-            dest_rect.left,
+-            dest_rect.top,
+-            dest_rect.right,
+-            dest_rect.bottom,
+-        );
++        // Clear with transparent pixels for filmloop (unless drawing straight onto the stage)
++        if !parent_props.as_ref().map_or(false, |p| p.direct) {
++            bitmap.clear_rect_transparent(
++                dest_rect.left,
++                dest_rect.top,
++                dest_rect.right,
++                dest_rect.bottom,
++            );
++        }
+ 
+         // Prefer info_rect (authoritative viewport from Director file).
+         // Fall back to computed rect.
+@@ -1856,6 +1862,7 @@ pub fn render_score_to_bitmap_with_offset(
+             ink: 0, // Default to copy ink
+             color: ColorRef::PaletteIndex(255), // Default foreground (black in most palettes)
+             bg_color: ColorRef::PaletteIndex(0), // Default background (white in most palettes)
++                        direct: false,
+         });
+ 
+         render_filmloop_from_channel_data(
+@@ -2999,6 +3006,75 @@ pub fn render_score_to_bitmap_with_offset(
+                 let width = initial_rect.width().max(1);
+                 let height = initial_rect.height().max(1);
+ 
++                // Director draws a film loop's sprites straight onto the stage, each
++                // with its own ink and blend, offset so the loop's own coordinates
++                // land on the loop sprite's position. Going through a cleared
++                // intermediate bitmap loses that: a 50%-blend shade blended onto
++                // transparent black becomes an opaque black box (Teen Titans
++                // Battle Blitz's "selected" fighter highlight). Untransformed loops
++                // take the direct path; rotated/skewed/stretched/blended ones keep
++                // the intermediate bitmap, which those transforms need.
++                let direct = rotation == 0.0
++                    && skew == 0.0
++                    && blend >= 100
++                    && bitmap.bit_depth == 32
++                    && sprite_rect.width() == width
++                    && sprite_rect.height() == height;
++                if direct {
++                    // Seed a loop-sized bitmap with the stage pixels underneath, draw the
++                    // loop's sprites over them (each with its own ink and blend, so blends
++                    // land on the real background), then copy the result back. The bitmap
++                    // being loop-sized crops the contents to the loop's bounds, as Director's
++                    // film-loop crop does.
++                    let (sw, sh) = (bitmap.width as i32, bitmap.height as i32);
++                    let mut scratch = Bitmap::new(
++                        width as u16,
++                        height as u16,
++                        32,
++                        32,
++                        8,
++                        PaletteRef::BuiltIn(get_system_default_palette()),
++                    );
++                    scratch.use_alpha = true;
++                    for y in 0..height {
++                        for x in 0..width {
++                            let (gx, gy) = (sprite_rect.left + x, sprite_rect.top + y);
++                            let d = ((y * width + x) * 4) as usize;
++                            if gx >= 0 && gy >= 0 && gx < sw && gy < sh {
++                                let s = ((gy * sw + gx) * 4) as usize;
++                                scratch.data[d..d + 3].copy_from_slice(&bitmap.data[s..s + 3]);
++                            }
++                            scratch.data[d + 3] = 255;
++                        }
++                    }
++                    render_score_to_bitmap_with_offset(
++                        player,
++                        &ScoreRef::FilmLoop(member_ref.clone()),
++                        &mut scratch,
++                        debug_sprite_num,
++                        IntRect::from_size(0, 0, width, height),
++                        (initial_rect.left, initial_rect.top),
++                        Some(FilmLoopParentProps {
++                            ink,
++                            color: color.clone(),
++                            bg_color: bg_color.clone(),
++                            direct: true,
++                        }),
++                    );
++                    for y in 0..height {
++                        for x in 0..width {
++                            let (gx, gy) = (sprite_rect.left + x, sprite_rect.top + y);
++                            if gx >= 0 && gy >= 0 && gx < sw && gy < sh {
++                                let s = ((y * width + x) * 4) as usize;
++                                let d = ((gy * sw + gx) * 4) as usize;
++                                bitmap.data[d..d + 3].copy_from_slice(&scratch.data[s..s + 3]);
++                            }
++                        }
++                    }
++                    bitmap.version = bitmap.version.wrapping_add(1);
++                    continue;
++                }
++
+                 debug!(
+                     "Rendering FilmLoop: channel {} frame {} ink={} blend={} initial_rect ({}, {}, {}, {}) bitmap size {}x{} sprite_rect ({}, {}, {}, {}) offset ({}, {})",
+                     channel_num,
+@@ -3038,6 +3114,7 @@ pub fn render_score_to_bitmap_with_offset(
+                         ink,
+                         color: color.clone(),
+                         bg_color: bg_color.clone(),
++                        direct: false,
+                     }),
+                 );
+ 
+diff --git a/vm-rust/src/rendering_gpu/webgl2/mod.rs b/vm-rust/src/rendering_gpu/webgl2/mod.rs
+index 66d876a..5515859 100644
+--- a/vm-rust/src/rendering_gpu/webgl2/mod.rs
++++ b/vm-rust/src/rendering_gpu/webgl2/mod.rs
+@@ -3760,6 +3760,7 @@ impl WebGL2Renderer {
+                             ink: ink as u32,
+                             color: fg_color.clone(),
+                             bg_color: bg_color.clone(),
++                            direct: false,
+                         }),
+                     );
+ 

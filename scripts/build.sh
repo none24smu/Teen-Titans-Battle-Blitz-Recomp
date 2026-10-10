@@ -7,30 +7,11 @@
 #           dirplayer compatibility patches below applied (platforms/web/shockwave.html plays it).
 source "$(dirname "$0")/_common.sh"
 
-# Byte patches for running Director movies in dirplayer-rs, as "name|search hex|replace hex|count".
-# dirplayer doesn't scope `tell sprite(n) ... go(1) ... end tell` to the sprite: instead of
-# rewinding the button's own animation it sends the whole movie to frame 1, so hovering START
-# restarted the game. The patch turns the push/call into a jump straight to `endtell`
-# (starttell, jmp +8, [skipped bytes], endtell).
-#
-# dirplayer's method form `a.intersect(b)` returns the union of the rects, so every hit test
-# passed and fighters stun-locked each other with zero-damage hits the moment anyone moved. Its
-# function form `intersect(a, b)` is correct and takes the same argument list, so the patch
-# turns `pusharglist 2; objcall #intersect` into `pusharglist 2; extcall #intersect` at the
-# three hit tests (fighter attacks, AI attack planning, fighter overlap).
-#
-# dirplayer draws a film loop's contents at the loop's own internal coordinates instead of where
-# the sprite sits, so the animated "selected" portraits on character select (film loops laid
-# out around the stage centre, shown in the bottom rows) vanished. The portrait patches repoint
-# the selected branches' string constants at the unselected branches' ones, so a selected
-# fighter shows its normal bitmap ("selection_<name>.active" / ".defeat"): selected player,
-# selected defeated enemy, selected enemy.
+# Byte patches applied to the web copy of a Director movie, as "name|search hex|replace hex|count".
+# Empty: the game runs unmodified. Earlier patches here worked around dirplayer-rs 0.8.1 bugs
+# (tell sprite + go, rect.intersect, film-loop drawing); those are now fixed in the player itself
+# (patches/dirplayer, scripts/build-player.sh), so the original bytecode plays as authored.
 DIRECTOR_PATCHES=(
-  "tell-go-1|1c8100014201a300911d|1c9300084201a300911d|2"
-  "rect-intersect|4302a7011c|430297011c|3"
-  "portrait-player|4b0844c08a005f4b104302a700710a44c80a|4b0844d08a005f4b104302a700710a44d80a|1"
-  "portrait-enemy-defeated|4b0844e08a005f4b104302a700710a44e80a|4b0844f08a005f4b104302a700710a44f80a|1"
-  "portrait-enemy|4b088401008a005f4b104302a700710a8401080a|4b088401108a005f4b104302a700710a8401180a|1"
 )
 
 # patch_movie <in> <out> <search hex> <replace hex> -> prints the number of replacements
