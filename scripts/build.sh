@@ -18,9 +18,19 @@ source "$(dirname "$0")/_common.sh"
 # function form `intersect(a, b)` is correct and takes the same argument list, so the patch
 # turns `pusharglist 2; objcall #intersect` into `pusharglist 2; extcall #intersect` at the
 # three hit tests (fighter attacks, AI attack planning, fighter overlap).
+#
+# dirplayer draws a film loop's contents at the loop's own internal coordinates instead of where
+# the sprite sits, so the animated "selected" portraits on character select (film loops laid
+# out around the stage centre, shown in the bottom rows) vanished. The portrait patches repoint
+# the selected branches' string constants at the unselected branches' ones, so a selected
+# fighter shows its normal bitmap ("selection_<name>.active" / ".defeat"): selected player,
+# selected defeated enemy, selected enemy.
 DIRECTOR_PATCHES=(
   "tell-go-1|1c8100014201a300911d|1c9300084201a300911d|2"
   "rect-intersect|4302a7011c|430297011c|3"
+  "portrait-player|4b0844c08a005f4b104302a700710a44c80a|4b0844d08a005f4b104302a700710a44d80a|1"
+  "portrait-enemy-defeated|4b0844e08a005f4b104302a700710a44e80a|4b0844f08a005f4b104302a700710a44f80a|1"
+  "portrait-enemy|4b088401008a005f4b104302a700710a8401080a|4b088401108a005f4b104302a700710a8401180a|1"
 )
 
 # patch_movie <in> <out> <search hex> <replace hex> -> prints the number of replacements

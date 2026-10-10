@@ -7,6 +7,9 @@ param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Names)
 $DirectorPatches = @(
     @{ Name = 'tell-go-1'; Search = '1c8100014201a300911d'; Replace = '1c9300084201a300911d'; Count = 2 }
     @{ Name = 'rect-intersect'; Search = '4302a7011c'; Replace = '430297011c'; Count = 3 }
+    @{ Name = 'portrait-player'; Search = '4b0844c08a005f4b104302a700710a44c80a'; Replace = '4b0844d08a005f4b104302a700710a44d80a'; Count = 1 }
+    @{ Name = 'portrait-enemy-defeated'; Search = '4b0844e08a005f4b104302a700710a44e80a'; Replace = '4b0844f08a005f4b104302a700710a44f80a'; Count = 1 }
+    @{ Name = 'portrait-enemy'; Search = '4b088401008a005f4b104302a700710a8401080a'; Replace = '4b088401108a005f4b104302a700710a8401180a'; Count = 1 }
 )
 
 function ConvertFrom-Hex([string]$Hex) {
