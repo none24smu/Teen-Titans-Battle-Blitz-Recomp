@@ -456,6 +456,7 @@ public class DirectorExtract {
                         case 1: exportBitmap(m, dir, base, extra, files); break;
                         case 4: exportPalette(m, dir, base, files); break;
                         case 6: exportSound(m, dir, base, extra, files); break;
+                        case 2: exportFilmLoop(m, dir, base, extra, files); break;
                         case 3: case 7: case 12: exportText(m, dir, base, files); break;
                         default: break;
                     }
@@ -480,6 +481,8 @@ public class DirectorExtract {
             js.append("\n  ]\n}\n");
             Files.writeString(dir.resolve("cast.json"), js.toString());
         }
+        Chunk vwsc = first("VWSC");
+        if (vwsc != null) Files.writeString(outDir.resolve("score.json"), scoreJson(readScore(data(vwsc))));
         List<Object[]> labels = frameLabels();
         if (!labels.isEmpty()) {
             StringBuilder lj = new StringBuilder("[\n");
@@ -649,6 +652,209 @@ public class DirectorExtract {
             files.add(base + ".xmed.bin");
             return;
         }
+    }
+
+    // ---------------------------------------------------------------- score (timeline)
+    //
+    // Director 6+ VWSC: a list of entries. Entry 0 is the frame data: a header, then one record per
+    // frame holding (size, offset, bytes) patches applied to a running buffer of numChannels
+    // fixed-size channel records. Channels 0-5 are the frame script, tempo, transition, sound 2,
+    // sound 1 and palette; channels 6+ are sprites 1+. A sprite record's span index N points at
+    // entries N (span: start/end frame, channel), N+1 (behaviors: castLib, member, initializer)
+    // and N+2 (sprite name). Layout as read by dirplayer-rs and ScummVM.
+
+    static final class ScoreData {
+        int frameCount, channelCount, recordSize, framesVersion;
+        List<byte[]> frames = new ArrayList<>(); // full channel buffer per frame
+        List<byte[]> entries = new ArrayList<>();
+    }
+
+    static ScoreData readFrames(byte[] fd, ScoreData s) {
+        ByteBuffer b = ByteBuffer.wrap(fd).order(ByteOrder.BIG_ENDIAN);
+        s.frameCount = b.getInt(8);
+        s.framesVersion = b.getShort(12) & 0xffff;
+        s.recordSize = b.getShort(14) & 0xffff;
+        s.channelCount = b.getShort(16) & 0xffff;
+        int p = 20;
+        byte[] buf = new byte[s.channelCount * s.recordSize];
+        while (p + 2 <= fd.length) {
+            int len = b.getShort(p) & 0xffff;
+            if (len < 2) break;
+            int end = Math.min(p + len, fd.length);
+            int q = p + 2;
+            while (q + 4 <= end) {
+                int size = b.getShort(q) & 0xffff, off = b.getShort(q + 2) & 0xffff;
+                q += 4;
+                if (off + size <= buf.length && q + size <= end) System.arraycopy(fd, q, buf, off, size);
+                q += size;
+            }
+            s.frames.add(buf.clone());
+            p = end;
+        }
+        return s;
+    }
+
+    ScoreData readScore(byte[] vwsc) {
+        ScoreData s = new ScoreData();
+        ByteBuffer b = ByteBuffer.wrap(vwsc).order(ByteOrder.BIG_ENDIAN);
+        int listStart = b.getInt(8);
+        int numEntries = b.getInt(listStart), listSize = b.getInt(listStart + 4);
+        int dataBase = listStart + 12 + listSize * 4;
+        int[] offs = new int[numEntries];
+        for (int i = 0; i < numEntries; i++) offs[i] = b.getInt(listStart + 12 + i * 4);
+        for (int i = 0; i < numEntries; i++) {
+            int start = dataBase + offs[i], end = i + 1 < numEntries ? dataBase + offs[i + 1] : vwsc.length;
+            s.entries.add(start <= end && end <= vwsc.length ? Arrays.copyOfRange(vwsc, start, end) : new byte[0]);
+        }
+        if (!s.entries.isEmpty() && s.entries.get(0).length > 20) readFrames(s.entries.get(0), s);
+        return s;
+    }
+
+    /** Cast library that castLib -1 (0xFFFF) refers to: a film loop's own cast while exporting it. */
+    int contextCastLib = -1;
+
+    String memberRef(int castLib, int number) {
+        if (number == 0) return null;
+        int li = (castLib == 0xffff && contextCastLib >= 0) ? contextCastLib : castLib - 1;
+        String lib = li >= 0 && li < castLibs.size() ? castLibs.get(li).name : "castLib" + castLib;
+        Member m = li >= 0 ? findMember(li, number) : null;
+        return lib + "#" + number + (m != null && !m.name.isEmpty() ? " " + m.name : "");
+    }
+
+    static String macRoman(byte[] b) {
+        int end = 0;
+        while (end < b.length && b[end] != 0) end++;
+        return new String(b, 0, end, Charset.forName("x-MacRoman"));
+    }
+
+    /** One sprite channel record as JSON fields (null when the channel is empty). */
+    String spriteJson(byte[] buf, int off, int size) {
+        ByteBuffer b = ByteBuffer.wrap(buf).order(ByteOrder.BIG_ENDIAN);
+        int type = buf[off] & 0xff, inkByte = buf[off + 1] & 0xff;
+        int castLib = b.getShort(off + 4) & 0xffff, member = b.getShort(off + 6) & 0xffff;
+        int span = b.getInt(off + 8);
+        int y = b.getShort(off + 12), x = b.getShort(off + 14), h = b.getShort(off + 16), w = b.getShort(off + 18);
+        boolean empty = type == 0 && member == 0 && span == 0 && x == 0 && y == 0 && w == 0 && h == 0;
+        if (empty) return null;
+        StringBuilder j = new StringBuilder();
+        j.append("\"member\": ").append(member == 0 ? "null" : json(memberRef(castLib, member)))
+         .append(", \"loc\": [").append(x).append(", ").append(y).append("]")
+         .append(", \"size\": [").append(w).append(", ").append(h).append("]")
+         .append(", \"ink\": ").append(inkByte & 0x3f);
+        if ((inkByte & 0x40) != 0) j.append(", \"trails\": true");
+        if ((inkByte & 0x80) != 0) j.append(", \"stretch\": true");
+        j.append(", \"type\": ").append(type)
+         .append(", \"foreColor\": ").append(buf[off + 2] & 0xff).append(", \"backColor\": ").append(buf[off + 3] & 0xff);
+        if (size > 21) { int br = buf[off + 21] & 0xff; j.append(", \"blend\": ").append(Math.round((255 - br) * 100 / 255.0)).append(", \"blendRaw\": ").append(br); }
+        if (size > 22) {
+            int flags = buf[off + 22] & 0xff, code = buf[off + 20] & 0xff;
+            if ((flags & 0x20) != 0) j.append(", \"flipH\": true");
+            if ((flags & 0x40) != 0) j.append(", \"flipV\": true");
+            if ((code & 0x40) != 0) j.append(", \"editable\": true");
+            if ((code & 0x80) != 0) j.append(", \"moveable\": true");
+        }
+        if (size >= 36) {
+            int rot = b.getInt(off + 28), skew = b.getInt(off + 32);
+            if (rot != 0) j.append(", \"rotation\": ").append(rot / 100.0);
+            if (skew != 0) j.append(", \"skew\": ").append(skew / 100.0);
+        }
+        if (span != 0) j.append(", \"span\": ").append(span);
+        return j.toString();
+    }
+
+    /** Behaviors (and sprite name) of the span whose record is entry N. */
+    String spanJson(ScoreData s, int n) {
+        StringBuilder j = new StringBuilder();
+        if (n + 1 < s.entries.size()) {
+            byte[] beh = s.entries.get(n + 1);
+            ByteBuffer b = ByteBuffer.wrap(beh).order(ByteOrder.BIG_ENDIAN);
+            List<String> list = new ArrayList<>();
+            for (int i = 0; i + 8 <= beh.length && beh.length % 8 == 0; i += 8) {
+                int lib = b.getShort(i) & 0xffff, mem = b.getShort(i + 2) & 0xffff, init = b.getInt(i + 4);
+                StringBuilder e = new StringBuilder("{\"script\": ").append(json(memberRef(lib, mem)));
+                if (init > 0 && init < s.entries.size()) {
+                    String text = macRoman(s.entries.get(init));
+                    if (!text.isEmpty()) e.append(", \"parameters\": ").append(json(text));
+                }
+                list.add(e.append("}").toString());
+            }
+            if (!list.isEmpty()) j.append("\"behaviors\": [").append(String.join(", ", list)).append("]");
+        }
+        if (n + 2 < s.entries.size()) {
+            String name = macRoman(s.entries.get(n + 2));
+            if (!name.isEmpty() && name.chars().allMatch(c -> c >= 0x20)) j.append(j.length() > 0 ? ", " : "").append("\"name\": ").append(json(name));
+        }
+        if (n < s.entries.size() && s.entries.get(n).length >= 20) {
+            ByteBuffer b = ByteBuffer.wrap(s.entries.get(n)).order(ByteOrder.BIG_ENDIAN);
+            j.insert(0, "\"startFrame\": " + b.getInt(0) + ", \"endFrame\": " + b.getInt(4) + ", \"channel\": " + b.getInt(16) + (j.length() > 0 ? ", " : ""));
+        }
+        return j.toString();
+    }
+
+    /** score.json: per frame, the main channels and every non-empty sprite channel; plus spans. */
+    String scoreJson(ScoreData s) {
+        StringBuilder j = new StringBuilder("{\n");
+        j.append("  \"frameCount\": ").append(s.frames.size()).append(", \"channels\": ").append(s.channelCount)
+         .append(", \"spriteChannels\": ").append(Math.max(0, s.channelCount - 6))
+         .append(", \"recordSize\": ").append(s.recordSize).append(", \"framesVersion\": ").append(s.framesVersion).append(",\n");
+        j.append("  \"frames\": [\n");
+        Set<Integer> spans = new TreeSet<>();
+        for (int f = 0; f < s.frames.size(); f++) {
+            byte[] buf = s.frames.get(f);
+            ByteBuffer b = ByteBuffer.wrap(buf).order(ByteOrder.BIG_ENDIAN);
+            int rs = s.recordSize;
+            StringBuilder fj = new StringBuilder("    {\"frame\": " + (f + 1));
+            // Channel 0: the frame script, as castLib (bytes 0-1) and member (bytes 2-3).
+            int fsLib = b.getShort(0) & 0xffff, fsMem = b.getShort(2) & 0xffff;
+            if (fsMem != 0) fj.append(", \"script\": ").append(json(memberRef(fsLib, fsMem)));
+            int tempoMode = buf[rs + 6] & 0xff, tempoValue = b.getShort(rs + 4) & 0xffff;
+            if (tempoMode != 0) fj.append(", \"tempo\": {\"mode\": ").append(tempoMode).append(", \"value\": ").append(tempoValue).append("}");
+            int trLib = b.getShort(2 * rs), trMem = b.getShort(2 * rs + 2);
+            if (trMem != 0) fj.append(", \"transition\": ").append(json(memberRef(trLib, trMem)));
+            for (int sc = 0; sc < 2; sc++) {
+                int base = (3 + sc) * rs;
+                int lib = b.getShort(base) & 0xffff, mem = b.getShort(base + 2) & 0xffff;
+                if (mem != 0) fj.append(", \"").append(sc == 0 ? "sound2" : "sound1").append("\": ").append(json(memberRef(lib, mem)));
+            }
+            int palLib = b.getShort(5 * rs), palMem = b.getShort(5 * rs + 2);
+            if (palMem != 0) fj.append(", \"palette\": ").append(json(palMem < 0 ? systemPaletteName(palMem) : memberRef(palLib, palMem)));
+            List<String> sprites = new ArrayList<>();
+            for (int c = 6; c < s.channelCount; c++) {
+                String sj = spriteJson(buf, c * rs, rs);
+                if (sj == null) continue;
+                int span = b.getInt(c * rs + 8);
+                if (span != 0) spans.add(span);
+                sprites.add("      {\"sprite\": " + (c - 5) + ", " + sj + "}");
+            }
+            if (!sprites.isEmpty()) fj.append(", \"sprites\": [\n").append(String.join(",\n", sprites)).append("\n    ]");
+            j.append(fj).append(f + 1 < s.frames.size() ? "},\n" : "}\n");
+        }
+        j.append("  ],\n  \"spans\": {\n");
+        List<String> sl = new ArrayList<>();
+        for (int n : spans) {
+            String sj = spanJson(s, n);
+            if (!sj.isEmpty()) sl.add("    \"" + n + "\": {" + sj + "}");
+        }
+        j.append(String.join(",\n", sl)).append("\n  }\n}\n");
+        return j.toString();
+    }
+
+    /** Film loop: its own small score (SCVW, same layout as VWSC) plus its bounding rect. */
+    void exportFilmLoop(Member m, Path dir, String base, StringBuilder extra, List<String> files) throws IOException {
+        if (m.specific.length >= 8) {
+            ByteBuffer b = ByteBuffer.wrap(m.specific).order(ByteOrder.BIG_ENDIAN);
+            int top = b.getShort(0), left = b.getShort(2), bottom = b.getShort(4), right = b.getShort(6);
+            extra.append(", \"rect\": [").append(left).append(", ").append(top).append(", ").append(right).append(", ").append(bottom).append("]");
+        }
+        List<Integer> scvw = owned(m.section, "SCVW");
+        if (scvw.isEmpty()) return;
+        ScoreData s = readScore(data(chunks.get(scvw.get(0))));
+        contextCastLib = m.castLibIndex;
+        extra.append(", \"frames\": ").append(s.frames.size());
+        String loopJson = scoreJson(s);
+        contextCastLib = -1;
+        Files.writeString(dir.resolve(base + ".filmloop.json"), loopJson);
+        files.add(base + ".filmloop.json");
     }
 
     static String hex(byte[] b) {

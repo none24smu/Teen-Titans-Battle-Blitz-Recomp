@@ -56,18 +56,24 @@ movies/game/casts/<cast>/*.lasm      Lingo bytecode listing (reference)
 
 assets/<movie or cast>/              everything else, in open formats (no Director needed):
   labels.json                        frame labels -> frame numbers (movies)
+  score.json                         the timeline (movies): per frame the frame script, tempo,
+                                     transition, sounds, palette and every sprite (member, loc,
+                                     size, ink, blend, flags); plus each sprite span's frames,
+                                     behaviors (with parameters) and name
   <castLib>/cast.json                every member: number, name, type, size, registration
                                      point, bit depth, palette, and the files below
   <castLib>/NNNN_<name>.png          bitmaps; 1-8 bit ones as indexed PNGs with their palette
   <castLib>/NNNN_<name>.wav          sounds
   <castLib>/NNNN_<name>.act          palettes (Adobe Color Table) + .palette.json
   <castLib>/NNNN_<name>.txt          text members
+  <castLib>/NNNN_<name>.filmloop.json film loops: their own timeline, same format as score.json
 ```
 
 The asset export is done by `scripts/extract/DirectorExtract.java` (plain Java, no
 dependencies). Bitmap pixels and palette colours were checked against dirplayer for every
-bit depth the game uses (1, 2, 4, 8, 16, 32). Not exported yet: the score (timeline) and
-film-loop timelines, shapes and the one Xtra member; they remain in the `.dir`.
+bit depth the game uses (1, 2, 4, 8, 16, 32); frame labels, frame scripts, sprite positions,
+blend values and span behaviors against the running game. Not exported yet: shape members
+and the one Xtra member, which remain in the `.dir`.
 
 `verify` re-decompiles the unprotected files and checks the Lingo comes out identical, and
 checks that no member failed to export.
