@@ -69,7 +69,7 @@ assets/<movie or cast>/              everything else, in open formats (no Direct
   <castLib>/NNNN_<name>.filmloop.json film loops: their own timeline, same format as score.json
 ```
 
-The asset export is done by `scripts/extract/DirectorExtract.java` (plain Java, no
+Every file and field is described in [docs/FORMATS.md](docs/FORMATS.md). The asset export is done by `scripts/extract/DirectorExtract.java` (plain Java, no
 dependencies). Bitmap pixels and palette colours were checked against dirplayer for every
 bit depth the game uses (1, 2, 4, 8, 16, 32); frame labels, frame scripts, sprite positions,
 blend values and span behaviors against the running game. Not exported yet: shape members
