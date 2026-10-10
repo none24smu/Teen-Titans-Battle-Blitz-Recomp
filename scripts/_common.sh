@@ -50,6 +50,19 @@ projectorrays() {
   "$PROJECTORRAYS" "$@"
 }
 
+# Exports a Director movie/cast's assets (scripts/extract/DirectorExtract.java), compiling the
+# extractor into tools/ the first time or when its source changed.
+director_extract() {
+  local src="$ROOT/scripts/extract/DirectorExtract.java" classes="$TOOLS_DIR/extract"
+  if [[ ! -f "$classes/DirectorExtract.class" || "$src" -nt "$classes/DirectorExtract.class" ]]; then
+    local javac="javac"
+    [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/javac" ]] && javac="$JAVA_HOME/bin/javac"
+    mkdir -p "$classes"
+    "$javac" -nowarn -d "$classes" "$src"
+  fi
+  "$JAVA" -cp "$classes" DirectorExtract "$1" "$2"
+}
+
 sha256_of() {
   local s
   s="$(sha256sum "$1" 2>/dev/null || shasum -a 256 "$1")"

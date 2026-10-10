@@ -45,6 +45,13 @@ function Export-Director([string]$Name) {
             Move-Item -Force $_.FullName (Join-Path $out ($f.BaseName + $_.Extension))
         }
     }
+
+    # Art, sound, palettes, text, labels and member metadata in open formats.
+    $assets = Join-Path $SrcDir "$Name\assets"
+    foreach ($f in Get-ChildItem -File $out | Where-Object { @('.dir', '.cst') -contains $_.Extension.ToLower() }) {
+        Write-Host "  assets: $($f.BaseName)"
+        Invoke-DirectorExtract $f.FullName (Join-Path $assets $f.BaseName)
+    }
 }
 
 $did = $false

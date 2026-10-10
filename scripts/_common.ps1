@@ -39,6 +39,22 @@ function Invoke-Ffdec {
     if ($LASTEXITCODE -ne 0) { throw "FFDec failed: $args" }
 }
 
+# Exports a Director movie/cast's assets (scripts/extract/DirectorExtract.java), compiling the
+# extractor into tools\ the first time or when its source changed.
+function Invoke-DirectorExtract([string]$File, [string]$OutDir) {
+    $src = Join-Path $Root 'scripts\extract\DirectorExtract.java'
+    $classes = Join-Path $ToolsDir 'extract'
+    $class = Join-Path $classes 'DirectorExtract.class'
+    if (-not (Test-Path $class) -or (Get-Item $src).LastWriteTime -gt (Get-Item $class).LastWriteTime) {
+        $javac = if ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME 'bin\javac.exe'))) { Join-Path $env:JAVA_HOME 'bin\javac.exe' } else { 'javac' }
+        New-Item -ItemType Directory -Force $classes | Out-Null
+        & $javac -nowarn -d $classes $src
+        if ($LASTEXITCODE -ne 0) { throw 'Compiling DirectorExtract failed (a JDK is needed for javac).' }
+    }
+    & $Java -cp $classes DirectorExtract $File $OutDir
+    if ($LASTEXITCODE -ne 0) { throw "Asset export failed: $File" }
+}
+
 function Invoke-ProjectorRays {
     if (-not (Test-Path $PrExe)) { throw "ProjectorRays not found at $PrExe. Run scripts\setup.ps1, or set PROJECTORRAYS." }
     & $PrExe @args

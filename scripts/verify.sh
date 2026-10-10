@@ -72,6 +72,20 @@ verify_director() {
   else
     status=1
   fi
+
+  local assets="$SRC_DIR/$name/assets"
+  if [[ -d "$assets" ]]; then
+    local errors pngs wavs
+    errors=$(grep -rl '"error"' "$assets" --include=cast.json | wc -l)
+    pngs=$(find "$assets" -name '*.png' | wc -l)
+    wavs=$(find "$assets" -name '*.wav' | wc -l)
+    if [[ $errors -eq 0 ]]; then
+      echo "  assets:  OK ($pngs images, $wavs sounds exported, no member failed)"
+    else
+      echo "  assets:  $errors cast(s) have members that failed to export -- see \"error\" in their cast.json"
+      status=1
+    fi
+  fi
 }
 
 did=0

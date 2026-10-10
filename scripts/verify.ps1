@@ -88,6 +88,19 @@ function Test-Director([string]$Name) {
     } else {
         Write-Host "  lingo:   OK ($count movies/casts, $scripts scripts re-decompile identically)"
     }
+
+    $assets = Join-Path $SrcDir "$Name\assets"
+    if (Test-Path $assets) {
+        $errors = @(Get-ChildItem -Recurse -File -Filter cast.json $assets | Where-Object { (Get-Content -Raw $_.FullName) -match '"error"' }).Count
+        $pngs = @(Get-ChildItem -Recurse -File -Filter *.png $assets).Count
+        $wavs = @(Get-ChildItem -Recurse -File -Filter *.wav $assets).Count
+        if ($errors -eq 0) {
+            Write-Host "  assets:  OK ($pngs images, $wavs sounds exported, no member failed)"
+        } else {
+            Write-Host "  assets:  $errors cast(s) have members that failed to export -- see `"error`" in their cast.json"
+            $script:failed = $true
+        }
+    }
 }
 
 $did = $false

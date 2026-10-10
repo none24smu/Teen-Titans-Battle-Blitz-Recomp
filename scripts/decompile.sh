@@ -56,6 +56,15 @@ decompile_director() {
       if [[ -e "$g" ]]; then mv -f "$g" "$out/$base.${g##*.}"; fi
     done
   done
+
+  # Art, sound, palettes, text, labels and member metadata in open formats.
+  local assets="$SRC_DIR/$name/assets"
+  for f in "$out"/*.dir "$out"/*.cst; do
+    [[ -f "$f" ]] || continue
+    base="$(basename "$f")"; base="${base%.*}"
+    echo "  assets: $base"
+    director_extract "$f" "$assets/$base"
+  done
 }
 
 
