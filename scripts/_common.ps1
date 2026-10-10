@@ -12,6 +12,15 @@ $FfdecUrl     = "https://github.com/jindrapetrik/jpexs-decompiler/releases/downl
 $FfdecSha256  = '35f4930eb7c380afe66f2117f90b006deac0631473ad7500bb39c78f68645ecd'
 $FfdecJar     = Join-Path $ToolsDir 'ffdec\ffdec.jar'
 
+# ProjectorRays (Shockwave/Director decompiler). Override with $env:PROJECTORRAYS.
+$PrVersion = '0.2.0'
+$PrUrl     = "https://github.com/ProjectorRays/ProjectorRays/releases/download/v$PrVersion/projectorrays-$PrVersion.exe"
+$PrSha256  = 'e9814428ee503cf129b6f5cff54524177b7bdd63201a9095d8d19433535c70db'
+$PrExe     = if ($env:PROJECTORRAYS) { $env:PROJECTORRAYS } else { Join-Path $ToolsDir 'projectorrays\projectorrays.exe' }
+
+# Director file types ProjectorRays understands.
+$DirectorExts = @('.dir', '.dxr', '.dcr', '.cst', '.cxt', '.cct')
+
 if ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME 'bin\java.exe'))) {
     $Java = Join-Path $env:JAVA_HOME 'bin\java.exe'
 } else {
@@ -24,10 +33,22 @@ function Invoke-Ffdec {
     if ($LASTEXITCODE -ne 0) { throw "FFDec failed: $args" }
 }
 
+function Invoke-ProjectorRays {
+    if (-not (Test-Path $PrExe)) { throw "ProjectorRays not found at $PrExe. Run scripts\setup.ps1, or set PROJECTORRAYS." }
+    & $PrExe @args
+    if ($LASTEXITCODE -ne 0) { throw "ProjectorRays failed: $args" }
+}
+
 # Names of the SWFs to process: the arguments given, or every SWF in original\.
 function Get-SwfNames([string[]]$Names) {
     if ($Names) { return $Names | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_) } }
-    $files = @(Get-ChildItem -Path $OriginalDir -Filter *.swf -File -ErrorAction SilentlyContinue)
-    if ($files.Count -eq 0) { throw 'No SWF files in original\.' }
-    return $files | ForEach-Object { $_.BaseName }
+    return Get-ChildItem -Path $OriginalDir -Filter *.swf -File -ErrorAction SilentlyContinue | ForEach-Object { $_.BaseName }
+}
+
+# Folders in original\ that hold a Director/Shockwave game: the arguments given, or all of them.
+function Get-DirectorNames([string[]]$Names) {
+    if ($Names) { return $Names | ForEach-Object { Split-Path -Leaf $_ } }
+    return Get-ChildItem -Path $OriginalDir -Directory -ErrorAction SilentlyContinue | Where-Object {
+        @(Get-ChildItem -File $_.FullName | Where-Object { $DirectorExts -contains $_.Extension.ToLower() }).Count -gt 0
+    } | ForEach-Object { $_.Name }
 }

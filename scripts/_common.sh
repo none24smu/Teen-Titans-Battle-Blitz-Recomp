@@ -12,6 +12,16 @@ FFDEC_URL="https://github.com/jindrapetrik/jpexs-decompiler/releases/download/ve
 FFDEC_SHA256="35f4930eb7c380afe66f2117f90b006deac0631473ad7500bb39c78f68645ecd"
 FFDEC_JAR="$TOOLS_DIR/ffdec/ffdec.jar"
 
+# ProjectorRays (Shockwave/Director decompiler) only ships a Windows build. Elsewhere, build it
+# from https://github.com/ProjectorRays/ProjectorRays and point PROJECTORRAYS at the binary.
+PROJECTORRAYS_VERSION="0.2.0"
+PROJECTORRAYS_URL="https://github.com/ProjectorRays/ProjectorRays/releases/download/v${PROJECTORRAYS_VERSION}/projectorrays-${PROJECTORRAYS_VERSION}.exe"
+PROJECTORRAYS_SHA256="e9814428ee503cf129b6f5cff54524177b7bdd63201a9095d8d19433535c70db"
+PROJECTORRAYS="${PROJECTORRAYS:-$TOOLS_DIR/projectorrays/projectorrays.exe}"
+
+# Director file types ProjectorRays understands.
+DIRECTOR_EXTS="dir dxr dcr cst cxt cct"
+
 if [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/java" ]]; then
   JAVA="$JAVA_HOME/bin/java"
 else
@@ -26,14 +36,42 @@ ffdec() {
   "$JAVA" -jar "$FFDEC_JAR" "$@"
 }
 
+projectorrays() {
+  if [[ ! -x "$PROJECTORRAYS" ]]; then
+    echo "ProjectorRays not found at $PROJECTORRAYS. Run scripts/setup.sh, or set PROJECTORRAYS." >&2
+    exit 1
+  fi
+  "$PROJECTORRAYS" "$@"
+}
+
+sha256_of() {
+  local s
+  s="$(sha256sum "$1" 2>/dev/null || shasum -a 256 "$1")"
+  echo "${s%% *}"
+}
+
+# Folders in original/ that hold a Director/Shockwave game: the arguments given, or all of them.
+director_names() {
+  if [[ $# -gt 0 ]]; then
+    for n in "$@"; do basename "$n"; done
+    return
+  fi
+  for d in "$ORIGINAL_DIR"/*/; do
+    [[ -d "$d" ]] || continue
+    for ext in $DIRECTOR_EXTS; do
+      if compgen -G "$d*.$ext" >/dev/null; then basename "$d"; break; fi
+    done
+  done
+}
+
 # Names of the SWFs to process: the arguments given, or every SWF in original/.
 swf_names() {
   if [[ $# -gt 0 ]]; then
     for n in "$@"; do basename "$n" .swf; done
   else
     for f in "$ORIGINAL_DIR"/*.swf; do
-      [[ -e "$f" ]] || { echo "No SWF files in original/." >&2; exit 1; }
-      basename "$f" .swf
+      [[ -e "$f" ]] && basename "$f" .swf
     done
+    return 0
   fi
 }

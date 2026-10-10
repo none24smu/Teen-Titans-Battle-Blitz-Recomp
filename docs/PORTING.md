@@ -1,5 +1,53 @@
 # Porting to other platforms
 
+## Battle Blitz (Director / Shockwave)
+
+`scripts/decompile` turns the protected Shockwave files into ordinary, editable Director
+files (`src/ttbattleblitz/movies/*.dir`, `*.cst`) plus the Lingo source as text
+(`.../casts/*/*.ls`). From there:
+
+### 1. Adobe Director (Windows, macOS, Shockwave)
+
+Open `src/ttbattleblitz/movies/game.dir` in Director 8.5 or later (MX 2004 and 11.5 are the
+most common). Keep the `char_*.cst` / `empty_*.cst` casts in the same folder. You can then
+edit scripts and art, and publish to Shockwave (`.dcr`) or a Windows/macOS projector. Before
+publishing, protect the external casts again (Xtras → Update Movies → Protect) so the
+`.cct` names the game loads still resolve. Alternatively, change the cast file names set in
+`Class_TitleScreen` and `Class_VersusScreen` (and the `DEBUG` movie script) to load `.cst`
+directly.
+
+### 2. Open-source Director players (Linux, web, handhelds)
+
+- **ScummVM** has a Director engine that runs many D2–D5 titles, with D6+ work in progress.
+  ScummVM itself runs on Windows, macOS, Linux, Android, iOS, consoles and handhelds. Try the
+  original `.dcr` or the unprotected `.dir`; how well a D8 title like this runs depends on the
+  ScummVM version.
+- **dirplayer-rs** is a Rust/WASM Shockwave player aimed at D8–D12 web content. It runs in
+  the browser, so on any OS.
+
+These replay the original movie, so they need no code changes beyond stubbing the
+network/browser calls listed in [BATTLE_BLITZ.md](BATTLE_BLITZ.md).
+
+### 3. Native port (any engine)
+
+[BATTLE_BLITZ.md](BATTLE_BLITZ.md) maps the architecture. The Lingo is object-oriented and
+splits into:
+
+- **A small engine layer** to reimplement: `Actor`/`AnimatedActor`/`CollidableActor`,
+  `Animation*`, `Scene`/`SpriteManager`, `KeyManager`, `AudioManager`, `Screen`.
+- **Game classes** that translate almost one to one: `Fighter`, `Move` and each fighter's
+  move/state classes, `KeyCombo`, the AI classes, HUD and screens.
+
+To get the art and sound out as PNG/WAV for another engine, open the unprotected casts in
+Director and export members, or use a cast-ripper tool on `src/ttbattleblitz/movies/*.cst`.
+Bitmaps are stored in `BITD` chunks with palettes in `CLUT`, and sounds in `snd ` chunks.
+`projectorrays decompile <file> -o <dir> --dump-chunks --dump-json` dumps them raw.
+
+Good targets: Godot (GDScript is close to Lingo's style), Haxe/OpenFL, or
+JavaScript/TypeScript with PixiJS for the web.
+
+## Flash hub (`internal.swf`)
+
 `scripts/build` produces a normal Flash SWF. Flash Player is gone, so there are three ways
 to get it running elsewhere, in increasing order of effort.
 

@@ -1,43 +1,40 @@
 # Teen Titans: Battle Blitz — Recomp
 
-Tooling to decompile the Teen Titans: Battle Blitz Flash SWF from Cartoon Network into
-editable source: ActionScript, a full XML description of every tag, SVG/PNG/MP3/TTF assets
-and an Adobe Animate project. It also rebuilds a working SWF from that source, and the
-rebuild is verified against the original frame by frame.
+Tooling to decompile **Teen Titans: Battle Blitz** (Cartoon Network, 2003) into editable
+source, as groundwork for recompiling or porting it to other platforms.
 
-**No game files are included.** The SWF, its art, sound and code belong to Cartoon Network /
-DC Comics. You supply your own copy, and everything extracted from it stays in gitignored
-folders (`original/`, `src/`, `build/`).
+| title | engine | decompiled to |
+|---|---|---|
+| **Battle Blitz** (the game) | Macromedia Director 8 / Shockwave | unprotected `.dir`/`.cst` movies plus **375 Lingo scripts (~31.7k lines)** |
+| Teen Titans site hub (`internal.swf`) | Flash 6 / ActionScript 1 | AS source, full SWF XML, SVG/PNG/MP3/TTF assets, Animate XFL, rebuildable SWF |
 
-> **Heads-up about the Internet Archive upload.** The file in the
-> [`teen-titans-battle-blitz-game`](https://archive.org/details/teen-titans-battle-blitz-game)
-> item (`internal.swf`) is **not the game itself**. It is the Teen Titans hub/menu page from
-> cartoonnetwork.com: a preloader, an intro animation, a music toggle, and buttons that link
-> to the character pages and to `battleblitz/index.html`, where the game was hosted. It has no
-> gameplay code. See [docs/STRUCTURE.md](docs/STRUCTURE.md). The pipeline works on any
-> AS1/AS2/AS3 SWF, so drop the real game SWF into `original/` when you find it (BlueMaxima's
-> Flashpoint is the usual place to look).
+**No game files are included.** The games, their art, sound and code belong to Cartoon
+Network / DC Comics. You supply your own copy, and everything extracted from it stays in
+gitignored folders (`original/`, `src/`, `build/`).
 
 ## Requirements
 
-- Java 11+ (`java` on PATH, or `JAVA_HOME` set)
 - Windows: PowerShell 5.1+ (built in). Linux/macOS/Git Bash: bash, curl, unzip.
+- Java 11+ (`java` on PATH, or `JAVA_HOME` set), for the Flash decompiler.
+- ProjectorRays, for Director games. `setup` downloads the Windows build automatically. On
+  Linux/macOS, [build it](https://github.com/ProjectorRays/ProjectorRays) and set
+  `PROJECTORRAYS=/path/to/projectorrays`.
 
 ## Usage
 
-1. Put your SWF(s) in `original/`. For the Internet Archive upload:
+1. Put the original files in `original/` (see [original/README.md](original/README.md)):
+   - Flash: `original/<name>.swf`
+   - Director/Shockwave: a folder `original/<name>/` holding the `.dcr`/`.dir`/`.cct`/`.cxt`
+     files. For Battle Blitz that's `original/ttbattleblitz/`.
 
-   | file | SHA-1 |
-   |---|---|
-   | `original/internal.swf` | `115ee2ee7c4a808fe66719039419c73ead8ac90b` |
-
-2. Run the pipeline. Every step takes optional SWF names and defaults to all of `original/*.swf`.
+2. Run the pipeline. Every step takes optional names and defaults to everything in
+   `original/`.
 
    ```powershell
-   scripts\setup.ps1       # download FFDec 26.3.0 into tools/ (checksum-verified)
-   scripts\decompile.ps1   # original/<name>.swf -> src/<name>/
-   scripts\build.ps1       # src/<name>/ -> build/<name>.swf
-   scripts\verify.ps1      # compare build/ against original/ frame by frame
+   scripts\setup.ps1       # download FFDec 26.3.0 + ProjectorRays 0.2.0 into tools/ (checksum-verified)
+   scripts\decompile.ps1   # original/ -> src/
+   scripts\build.ps1       # src/<name>/ -> build/<name>.swf   (Flash)
+   scripts\verify.ps1      # check src/ and build/ against original/
    ```
 
    ```bash
@@ -45,47 +42,59 @@ folders (`original/`, `src/`, `build/`).
    ```
 
    If PowerShell refuses to run the scripts, use
-   `powershell -ExecutionPolicy Bypass -File scripts\build.ps1`.
+   `powershell -ExecutionPolicy Bypass -File scripts\decompile.ps1`.
 
 ## What decompile produces
 
+**Director game** (`original/ttbattleblitz/` → `src/ttbattleblitz/movies/`):
+
 ```
-src/<name>/
-  swf.xml     every tag in the SWF as XML (timelines, placements, shapes, sounds, fonts,
-              bitmaps...). Lossless: build.sh turns this back into the SWF.
-  scripts/    ActionScript source, one file per frame/button/clip action.
-              build.sh recompiles these into the SWF.
-  pcode/      the original bytecode as readable P-code (reference)
-  assets/     shapes (SVG), sprites, buttons and frames (PNG), sounds (MP3), images,
-              fonts (TTF), texts
-  xfl/        Adobe Animate project (open <name>.xfl)
+game.dir, gamewrapper.dir     unprotected movies: open and edit in Director 8.5+
+char_*.cst, empty_*.cst       unprotected casts (fighter art, sounds)
+game/casts/<cast>/*.ls        Lingo source, one file per script
+game/casts/<cast>/*.lasm      Lingo bytecode listing (reference)
 ```
 
-Edit `src/<name>/scripts/**/*.as` or `src/<name>/swf.xml`, run build, and `build/<name>.swf`
-reflects your changes. On an untouched `src/`, `verify` reports all frames rendering
-identically and the recompiled scripts decompiling back to the same source.
+`verify` re-decompiles the unprotected files and checks the Lingo comes out identical.
+Architecture notes: [docs/BATTLE_BLITZ.md](docs/BATTLE_BLITZ.md).
 
-## Getting it onto other platforms
+**Flash SWF** (`original/internal.swf` → `src/internal/`):
+
+```
+swf.xml     every tag as XML. Lossless: build turns it back into the SWF
+scripts/    ActionScript source; build recompiles it
+pcode/      original bytecode as readable P-code (reference)
+assets/     shapes (SVG), sprites/buttons/frames (PNG), sounds (MP3), images, fonts, texts
+xfl/        Adobe Animate project
+```
+
+`verify` checks that every frame of `build/internal.swf` renders identically to the original
+and that the recompiled scripts decompile back to the same source. Notes:
+[docs/STRUCTURE.md](docs/STRUCTURE.md).
+
+## Recompiling / porting
 
 See [docs/PORTING.md](docs/PORTING.md). In short:
 
-- **Anywhere, today:** run `build/<name>.swf` in [Ruffle](https://ruffle.rs) (web, Windows,
-  macOS, Linux). `platforms/web/` has a ready-made Ruffle page.
-- **Native app:** open `src/<name>/xfl/` in Adobe Animate and publish to HTML5 Canvas or AIR
-  (Windows/macOS/Android/iOS).
-- **Full source port:** reimplement the timeline logic from `src/<name>/scripts` in your
-  engine of choice (OpenFL/Haxe, Godot, JavaScript...) using the extracted assets.
+- **Director game:** open `src/ttbattleblitz/movies/game.dir` in Adobe Director (8.5–12) to
+  edit and republish (Shockwave or a Windows/macOS projector). Or run it through an
+  open-source Director player such as ScummVM's Director engine or dirplayer-rs (web).
+  For a native port, translate the Lingo classes to your engine; the code is cleanly
+  object-oriented.
+- **Flash hub:** run `build/internal.swf` in Ruffle (`platforms/web/`), or open the XFL in
+  Adobe Animate.
 
 ## Layout
 
 ```
 scripts/     pipeline (setup, decompile, build, verify), .ps1 and .sh
 docs/        structure notes and porting guide
-platforms/   per-platform wrappers (web/Ruffle)
-original/    your SWFs            (gitignored)
+platforms/   per-platform wrappers (web/Ruffle for SWFs)
+original/    your game files      (gitignored)
 src/         decompiled output    (gitignored)
-build/       rebuilt SWFs         (gitignored)
-tools/       FFDec                (gitignored)
+build/       rebuilt output       (gitignored)
+tools/       decompilers          (gitignored)
 ```
 
-Decompilation uses [JPEXS Free Flash Decompiler](https://github.com/jindrapetrik/jpexs-decompiler) (GPLv3).
+Decompilers: [JPEXS Free Flash Decompiler](https://github.com/jindrapetrik/jpexs-decompiler) (GPLv3) and
+[ProjectorRays](https://github.com/ProjectorRays/ProjectorRays) (MPL-2.0).
