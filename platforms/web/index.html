@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Battle Blitz Recomp</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin: 0; height: 100%; background: #000; }
+    body { display: flex; align-items: center; justify-content: center; }
+    #player { width: min(100vw, calc(100vh * 750 / 415)); aspect-ratio: 750 / 415; }
+    #player > * { width: 100%; height: 100%; }
+  </style>
+  <script src="https://unpkg.com/@ruffle-rs/ruffle@0.6.0/ruffle.js"></script>
+</head>
+<body>
+  <div id="player"></div>
+  <script>
+    // Plays build/<name>.swf; pick the file with ?swf=<name> (default: internal).
+    // Serve the repo root over HTTP; browsers block loading SWFs from file:// URLs.
+    const name = new URLSearchParams(location.search).get("swf") || "internal";
+    const ruffle = window.RufflePlayer.newest();
+    const player = ruffle.createPlayer();
+    document.getElementById("player").appendChild(player);
+    player.load({
+      url: "../../build/" + encodeURIComponent(name) + ".swf",
+      allowScriptAccess: false,
+      letterbox: "on",
+    });
+  </script>
+</body>
+</html>

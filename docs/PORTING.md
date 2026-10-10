@@ -1,0 +1,56 @@
+# Porting to other platforms
+
+`scripts/build` produces a normal Flash SWF. Flash Player is gone, so there are three ways
+to get it running elsewhere, in increasing order of effort.
+
+## 1. Ruffle (web, Windows, macOS, Linux)
+
+[Ruffle](https://ruffle.rs) is an open-source Flash Player emulator. It fully supports
+AS1/AS2 content like this, and it is what the Internet Archive uses to run the file.
+
+- **Web:** serve the repo root over HTTP and open `platforms/web/index.html`:
+  ```bash
+  python -m http.server 8000
+  ```
+  then browse to `http://localhost:8000/platforms/web/`. Add `?swf=<name>` to load a
+  different `build/<name>.swf`. To publish it, copy `platforms/web/index.html` and the SWF
+  to any static host and adjust the SWF path.
+- **Desktop:** download the Ruffle desktop player for your OS from
+  <https://ruffle.rs/downloads> and open `build/<name>.swf`.
+- **Mobile:** use the web build in a WebView (Capacitor, Cordova, or a native WebView
+  wrapper).
+
+## 2. Adobe Animate (HTML5 Canvas, AIR desktop/mobile)
+
+`src/<name>/xfl/` is an Animate project rebuilt from the SWF: library symbols, timelines,
+frame scripts and assets.
+
+1. Open `src/<name>/xfl/<name>.xfl` in Adobe Animate.
+2. Publish as-is to SWF, or to **AIR for Desktop / Android / iOS** (the HARMAN AIR SDK keeps
+   AS1/AS2 content working only inside a SWF wrapper. For a native AIR app, convert the
+   document to AS3 and port the ~140 lines of script).
+3. For **HTML5 Canvas**: convert the document type to HTML5 Canvas, then rewrite the frame
+   scripts in JavaScript (`this.gotoAndStop(...)`, `window.open(...)`, etc.).
+
+## 3. Full source port (any engine)
+
+The decompiled output has everything an engine port needs:
+
+- **Logic:** `src/<name>/scripts/` (the original ActionScript) and `docs/STRUCTURE.md` (the
+  flow).
+- **Timelines:** `src/<name>/swf.xml` lists every PlaceObject/RemoveObject per frame with
+  depths, matrices and colour transforms. This is the data you replay to reproduce the
+  animation.
+- **Art:** `src/<name>/assets/shapes/*.svg` (vector) or the PNG renders in `sprites/`,
+  `buttons/` and `frames/`.
+- **Audio:** `src/<name>/assets/sounds/*.mp3`.
+- **Fonts:** `src/<name>/assets/fonts/*.ttf`.
+
+Engines that handle SWF-style content well:
+
+- **OpenFL / Haxe:** can load SWF libraries directly (`openfl-swf` / `swflite`) and targets
+  HTML5, Windows, macOS, Linux, Android and iOS.
+- **Godot:** use the PNG/SVG assets with `AnimationPlayer`, and replay the timeline from
+  `swf.xml`.
+- **Plain JavaScript/Canvas:** the `canvas` export formats in FFDec
+  (`-format shape:canvas,frame:canvas`) give drawing code you can embed.

@@ -1,0 +1,17 @@
+# Copyrighted game data: supplied by you, never committed
+original/*
+!original/README.md
+*.swf
+*.fla
+src/
+build/
+
+# Downloaded tools
+tools/
+
+# Internet Archive item metadata
+*_meta.xml
+*_meta.sqlite
+*_files.xml
+*_reviews.xml
+*.torrent
