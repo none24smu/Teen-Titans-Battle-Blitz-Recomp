@@ -6,6 +6,7 @@ param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Names)
 # Byte patches for running Director movies in dirplayer-rs (see scripts/build.sh for why).
 $DirectorPatches = @(
     @{ Name = 'tell-go-1'; Search = '1c8100014201a300911d'; Replace = '1c9300084201a300911d'; Count = 2 }
+    @{ Name = 'rect-intersect'; Search = '4302a7011c'; Replace = '430297011c'; Count = 3 }
 )
 
 function ConvertFrom-Hex([string]$Hex) {

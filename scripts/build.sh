@@ -12,8 +12,15 @@ source "$(dirname "$0")/_common.sh"
 # rewinding the button's own animation it sends the whole movie to frame 1, so hovering START
 # restarted the game. The patch turns the push/call into a jump straight to `endtell`
 # (starttell, jmp +8, [skipped bytes], endtell).
+#
+# dirplayer's method form `a.intersect(b)` returns the union of the rects, so every hit test
+# passed and fighters stun-locked each other with zero-damage hits the moment anyone moved. Its
+# function form `intersect(a, b)` is correct and takes the same argument list, so the patch
+# turns `pusharglist 2; objcall #intersect` into `pusharglist 2; extcall #intersect` at the
+# three hit tests (fighter attacks, AI attack planning, fighter overlap).
 DIRECTOR_PATCHES=(
   "tell-go-1|1c8100014201a300911d|1c9300084201a300911d|2"
+  "rect-intersect|4302a7011c|430297011c|3"
 )
 
 # patch_movie <in> <out> <search hex> <replace hex> -> prints the number of replacements
