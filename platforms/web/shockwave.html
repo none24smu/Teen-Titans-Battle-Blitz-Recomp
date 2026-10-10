@@ -13,6 +13,7 @@
     kbd { color: #fff; border: 1px solid #555; border-radius: 3px; padding: 0 4px; font: inherit; }
     code { color: #fff; }
     #stage { position: relative; }
+    .sel-shade { position: absolute; pointer-events: none; display: none; background: rgba(0, 0, 0, 0.45); }
     #menu-focus {
       position: absolute; pointer-events: none; display: none; box-sizing: border-box;
       border: 2px solid #ffe14d; border-radius: 4px; box-shadow: 0 0 8px #ffe14d;
@@ -132,7 +133,10 @@
         /^button_controls_012$/, /^controls_over$/,                     // select: controls
         /^back_008$/, /^back_over$/, /^back_button$/, /^back_button_over$/, // back buttons
       ];
+      const HIGHLIGHT_MEMBER = /^loop_selection_highlight\./;
       const STAGE_W = 600, STAGE_H = 400, MAX_CHANNEL = 200;
+      let shades = [];                     // stage rects to darken
+      const hiddenHighlights = new Set();  // channels whose broken highlight loop we hid
       const ring = document.getElementById("menu-focus");
       let buttons = [];      // [{ ch, name, rect: [l, t, r, b] }]
       let focused = null;    // channel number
@@ -150,9 +154,26 @@
         if (scanning || !window.__vm || !window.__vm.mcp_eval_lingo) return;
         scanning = true;
         try {
-          const found = [];
+          const found = [], shadeRects = [];
+          // The fighters currently picked on character select (VOID elsewhere).
+          const picked = [
+            unquote(await lingo(`g.main.screen.fighterNames[g.playerID]`)),
+            unquote(await lingo(`g.main.screen.fighterNames[g.enemyID]`)),
+          ];
           for (let ch = 1; ch <= MAX_CHANNEL; ch++) {
             const name = unquote(await lingo(`sprite(${ch}).member.name`));
+            if (name && HIGHLIGHT_MEMBER.test(name)) {
+              // Character select's "selected" darkening is a film loop per fighter that dirplayer
+              // draws as a solid black box. Keep those hidden and darken the picked fighters'
+              // portraits with a page overlay instead.
+              if (picked.includes(name.replace(HIGHLIGHT_MEMBER, ""))) {
+                const rect = ((await lingo(`sprite(${ch}).rect`)) || "").match(/-?\d+(\.\d+)?/g);
+                if (rect) shadeRects.push(rect.map(Number));
+              }
+              hiddenHighlights.add(ch);
+              continue;
+            }
+            if (!menuKeys) continue;
             if (!name || !BUTTON_MEMBERS.some(re => re.test(name))) continue;
             if ((await lingo(`sprite(${ch}).visible`)) !== "1") continue;
             const rect = ((await lingo(`sprite(${ch}).rect`)) || "").match(/-?\d+(\.\d+)?/g);
@@ -166,13 +187,56 @@
             else found.push({ ch, chs: [ch], name, rect: [l, t, r, b] });
           }
           buttons = found;
+          shades = shadeRects;
           if (!buttons.some(b => b.ch === focused)) setFocus(null);
           drawRing();
+          drawShades();
         } finally {
           scanning = false;
         }
       }
-      if (menuKeys) setInterval(scan, 250);
+      setInterval(scan, 250);
+
+      // Keep the highlight loops hidden (the game re-shows the opponent's whenever it changes),
+      // and give a channel back as soon as it shows anything else, so the next screens' sprites
+      // in those channels are never affected.
+      setInterval(async () => {
+        if (!window.__vm || !window.__vm.mcp_eval_lingo) return;
+        for (const ch of [...hiddenHighlights]) {
+          const name = unquote(await lingo(`sprite(${ch}).member.name`));
+          if (HIGHLIGHT_MEMBER.test(name)) {
+            if ((await lingo(`sprite(${ch}).visible`)) === "1") await lingo(`sprite(${ch}).visible = 0`);
+          } else {
+            await lingo(`sprite(${ch}).visible = 1`);
+            hiddenHighlights.delete(ch);
+            shades = [];
+            drawShades();
+          }
+        }
+      }, 50);
+
+      function drawShades() {
+        const canvas = stage.querySelector("canvas");
+        const divs = [...stage.querySelectorAll(".sel-shade")];
+        while (divs.length < shades.length) {
+          const d = document.createElement("div");
+          d.className = "sel-shade";
+          stage.appendChild(d);
+          divs.push(d);
+        }
+        divs.forEach((d, i) => {
+          const rect = shades[i];
+          if (!rect || !canvas) { d.style.display = "none"; return; }
+          const c = canvas.getBoundingClientRect(), s = stage.getBoundingClientRect();
+          const sx = c.width / STAGE_W, sy = c.height / STAGE_H;
+          const [l, t, r, b] = rect;
+          Object.assign(d.style, {
+            display: "block",
+            left: (c.left - s.left + l * sx) + "px", top: (c.top - s.top + t * sy) + "px",
+            width: ((r - l) * sx) + "px", height: ((b - t) * sy) + "px",
+          });
+        });
+      }
 
       function drawRing() {
         const btn = buttons.find(b => b.ch === focused);
@@ -249,7 +313,7 @@
         } else handled = false;
         if (handled) { e.preventDefault(); e.stopImmediatePropagation(); }
       }, true);
-      window.addEventListener("resize", drawRing);
+      window.addEventListener("resize", () => { drawRing(); drawShades(); });
     }
   </script>
 </body>
