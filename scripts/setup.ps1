@@ -29,6 +29,18 @@ if (Test-Path $FfdecJar) {
     Write-Host "FFDec installed at $FfdecJar"
 }
 
+if (Test-Path (Join-Path $DirplayerDir 'dirplayer-polyfill.js')) {
+    Write-Host "dirplayer already installed at $DirplayerDir"
+} else {
+    $zip = Join-Path $ToolsDir "dirplayer-polyfill-$DirplayerVersion.zip"
+    Write-Host "Downloading dirplayer-rs polyfill $DirplayerVersion..."
+    Get-Verified $DirplayerUrl $zip $DirplayerSha256
+    if (Test-Path $DirplayerDir) { Remove-Item -Recurse -Force $DirplayerDir }
+    Expand-Archive -Path $zip -DestinationPath $DirplayerDir
+    Remove-Item $zip
+    Write-Host "dirplayer installed at $DirplayerDir"
+}
+
 if (Test-Path $PrExe) {
     Write-Host "ProjectorRays found at $PrExe"
 } else {

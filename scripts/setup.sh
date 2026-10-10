@@ -32,6 +32,19 @@ else
   echo "FFDec installed at $FFDEC_JAR"
 fi
 
+if [[ -f "$DIRPLAYER_DIR/dirplayer-polyfill.js" ]]; then
+  echo "dirplayer already installed at $DIRPLAYER_DIR"
+else
+  zip="$TOOLS_DIR/dirplayer-polyfill-${DIRPLAYER_VERSION}.zip"
+  echo "Downloading dirplayer-rs polyfill $DIRPLAYER_VERSION..."
+  download "$DIRPLAYER_URL" "$zip" "$DIRPLAYER_SHA256"
+  rm -rf "$DIRPLAYER_DIR"
+  mkdir -p "$DIRPLAYER_DIR"
+  unzip -q "$zip" -d "$DIRPLAYER_DIR"
+  rm -f "$zip"
+  echo "dirplayer installed at $DIRPLAYER_DIR"
+fi
+
 if [[ -x "$PROJECTORRAYS" ]]; then
   echo "ProjectorRays found at $PROJECTORRAYS"
 else

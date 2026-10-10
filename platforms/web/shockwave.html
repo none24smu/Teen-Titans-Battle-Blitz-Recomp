@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Battle Blitz Shockwave</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin: 0; height: 100%; background: #000; color: #ccc; font: 14px system-ui, sans-serif; }
+    body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; }
+    #note { max-width: 36em; padding: 16px; line-height: 1.5; }
+    #controls { margin: 0; padding: 0 16px; color: #999; text-align: center; line-height: 1.6; }
+    kbd { color: #fff; border: 1px solid #555; border-radius: 3px; padding: 0 4px; font: inherit; }
+    code { color: #fff; }
+  </style>
+</head>
+<body>
+  <div id="stage"></div>
+  <p id="controls">
+    <kbd>←</kbd> <kbd>→</kbd> move &nbsp; <kbd>↑</kbd> jump &nbsp; <kbd>↓</kbd> crouch &nbsp;
+    <kbd>Z</kbd> punch &nbsp; <kbd>X</kbd> kick &nbsp; <kbd>P</kbd> pause &nbsp; <kbd>Esc</kbd> quit match
+  </p>
+  <script>
+    // Plays a Director game through dirplayer-rs (scripts/setup installs it into tools/).
+    //   default             build/<game>/web/game.dir (scripts/build: the decompiled movie with
+    //                       dirplayer compatibility patches), else src/<game>/movies/game.dir
+    //   ?from=src           the unpatched decompiled movie
+    //   ?from=original      original/<game>/game.dcr
+    //   ?runmode=projector  report "Projector" instead of "Plugin" to the game's Lingo
+    //   ?game=<name>        game folder (default ttbattleblitz)
+    // The movie loads its char_*.cct casts from its own folder; scripts/serve maps those names to
+    // the unprotected .cst files in src/. Browsers block all of this from file:// URLs, so run
+    // scripts/serve and open the page over http.
+    const params = new URLSearchParams(location.search);
+    const game = encodeURIComponent(params.get("game") || "ttbattleblitz");
+    const from = params.get("from") || "build";
+    const projector = params.get("runmode") === "projector";
+    const sources = {
+      build: "../../build/" + game + "/web/game.dir",
+      src: "../../src/" + game + "/movies/game.dir",
+      original: "../../original/" + game + "/game.dcr",
+    };
+    const stage = document.getElementById("stage");
+
+    async function pickSource() {
+      if (from !== "build") return sources[from] || sources.src;
+      try {
+        const r = await fetch(sources.build, { method: "HEAD" });
+        if (r.ok) return sources.build;
+      } catch (e) {}
+      console.warn("No patched build found; run scripts/build. Using the unpatched decompiled movie.");
+      return sources.src;
+    }
+
+    if (location.protocol === "file:") {
+      stage.innerHTML = '<p id="note">This page has to be served over HTTP. Run ' +
+        '<code>scripts\\serve.ps1</code> (or <code>scripts/serve.sh</code>) from the repo and open ' +
+        '<code>http://localhost:8000/platforms/web/shockwave.html</code>.</p>';
+    } else pickSource().then(src => {
+      const embed = document.createElement("embed");
+      embed.src = src;
+      embed.type = "application/x-director";
+      if (projector) {
+        // dirplayer looks up [data-launch-command] anywhere in the page; it replaces the <embed>,
+        // so the attribute lives on its own element.
+        const launch = document.createElement("div");
+        launch.hidden = true;
+        launch.setAttribute("data-launch-command", '--setTheRunMode "Projector"');
+        document.body.appendChild(launch);
+      }
+      embed.width = "600";
+      embed.height = "400";
+      stage.appendChild(embed);
+
+      const s = document.createElement("script");
+      s.src = "../../tools/dirplayer/polyfill/dirplayer-polyfill.js";
+      document.head.appendChild(s);
+
+      // dirplayer only hears the keyboard while its player element has focus, which clicks on
+      // the game don't reliably give it. Forward keys from anywhere else on the page, so the
+      // game's controls always work. dirplayer maps browser keys to Director's Mac key codes.
+      const GAME_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", " ", "Enter", "Escape", "Tab"]);
+      const forward = (e, down) => {
+        const vm = window.__vm;
+        if (!vm || typeof vm.key_down !== "function") return;
+        if (stage.contains(document.activeElement) && document.activeElement !== stage) return; // player has focus
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (GAME_KEYS.has(e.key)) e.preventDefault(); // no page scrolling
+        if (down) {
+          if (!e.repeat) vm.key_down(e.key, e.keyCode);
+        } else {
+          vm.key_up(e.key, e.keyCode);
+        }
+      };
+      document.addEventListener("keydown", e => forward(e, true));
+      document.addEventListener("keyup", e => forward(e, false));
+    });
+  </script>
+</body>
+</html>

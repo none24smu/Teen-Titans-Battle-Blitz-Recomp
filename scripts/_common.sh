@@ -22,6 +22,12 @@ PROJECTORRAYS="${PROJECTORRAYS:-$TOOLS_DIR/projectorrays/projectorrays.exe}"
 # Director file types ProjectorRays understands.
 DIRECTOR_EXTS="dir dxr dcr cst cxt cct"
 
+# dirplayer-rs web polyfill (plays Director/Shockwave movies in the browser; platforms/web/shockwave.html).
+DIRPLAYER_VERSION="0.8.1"
+DIRPLAYER_URL="https://github.com/igorlira/dirplayer-rs/releases/download/v${DIRPLAYER_VERSION}/dirplayer-polyfill-${DIRPLAYER_VERSION}.zip"
+DIRPLAYER_SHA256="6f5000412c50833345a630ade25fb70359dc4e1aae66352c80de7da77542162c"
+DIRPLAYER_DIR="$TOOLS_DIR/dirplayer/polyfill"
+
 if [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/java" ]]; then
   JAVA="$JAVA_HOME/bin/java"
 else

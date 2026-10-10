@@ -72,6 +72,16 @@ xfl/        Adobe Animate project
 and that the recompiled scripts decompile back to the same source. Notes:
 [docs/STRUCTURE.md](docs/STRUCTURE.md).
 
+## Playing it
+
+```powershell
+scripts\build.ps1; scripts\serve.ps1
+```
+
+Open <http://localhost:8000/platforms/web/shockwave.html> for the game (dirplayer-rs) or
+<http://localhost:8000/platforms/web/> for the Flash hub (Ruffle). Controls: arrows,
+<kbd>Z</kbd> punch, <kbd>X</kbd> kick.
+
 ## Recompiling / porting
 
 See [docs/PORTING.md](docs/PORTING.md). In short:

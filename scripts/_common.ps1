@@ -21,6 +21,12 @@ $PrExe     = if ($env:PROJECTORRAYS) { $env:PROJECTORRAYS } else { Join-Path $To
 # Director file types ProjectorRays understands.
 $DirectorExts = @('.dir', '.dxr', '.dcr', '.cst', '.cxt', '.cct')
 
+# dirplayer-rs web polyfill (plays Director/Shockwave movies in the browser; platforms/web/shockwave.html).
+$DirplayerVersion = '0.8.1'
+$DirplayerUrl     = "https://github.com/igorlira/dirplayer-rs/releases/download/v$DirplayerVersion/dirplayer-polyfill-$DirplayerVersion.zip"
+$DirplayerSha256  = '6f5000412c50833345a630ade25fb70359dc4e1aae66352c80de7da77542162c'
+$DirplayerDir     = Join-Path $ToolsDir 'dirplayer\polyfill'
+
 if ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME 'bin\java.exe'))) {
     $Java = Join-Path $env:JAVA_HOME 'bin\java.exe'
 } else {

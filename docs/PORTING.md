@@ -16,6 +16,28 @@ publishing, protect the external casts again (Xtras → Update Movies → Protec
 `Class_TitleScreen` and `Class_VersusScreen` (and the `DEBUG` movie script) to load `.cst`
 directly.
 
+### Play it now in the browser (dirplayer-rs)
+
+```powershell
+scripts\setup.ps1; scripts\decompile.ps1; scripts\build.ps1; scripts\serve.ps1
+```
+
+Then open <http://localhost:8000/platforms/web/shockwave.html>. Controls: arrow keys
+(move, jump, crouch), <kbd>Z</kbd> punch, <kbd>X</kbd> kick, <kbd>P</kbd> pause, <kbd>Esc</kbd>
+quit the match.
+
+- `scripts/setup` installs the dirplayer-rs web polyfill (pinned, checksum-verified) into
+  `tools/dirplayer/`.
+- `scripts/build` writes `build/ttbattleblitz/web/`, the decompiled movie plus one
+  compatibility patch. dirplayer runs `tell sprite(n) … go(1) … end tell` against the
+  whole movie instead of the sprite, so hovering START sent the game back to frame 1 in an
+  endless loop. The patch skips that rewind in the two places it appears (START button,
+  fighter-select logo).
+- `scripts/serve` serves the repo locally. Browsers refuse to load movies from `file://`.
+  It also resolves the `.cct` cast names the movie asks for to the unprotected `.cst` files.
+- The page forwards keyboard input to the player even when it doesn't have focus, and runs
+  the game in Shockwave "plugin" mode. The projector code path stops on the title screen.
+
 ### 2. Open-source Director players (Linux, web, handhelds)
 
 - **ScummVM** has a Director engine that runs many D2–D5 titles, with D6+ work in progress.
