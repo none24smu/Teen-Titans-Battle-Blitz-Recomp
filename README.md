@@ -113,11 +113,14 @@ Open <http://localhost:8000/platforms/web/shockwave.html> for the game (dirplaye
 
 See [docs/PORTING.md](docs/PORTING.md). In short:
 
-- **Director game:** open `src/ttbattleblitz/movies/game.dir` in Adobe Director (8.5–12) to
-  edit and republish (Shockwave or a Windows/macOS projector). Or run it through an
-  open-source Director player such as ScummVM's Director engine or dirplayer-rs (web).
-  For a native port, translate the Lingo classes to your engine; the code is cleanly
-  object-oriented.
+- **Director game:** edit the Lingo in `src/ttbattleblitz/movies/game/casts/*/*.ls` and run
+  `scripts/build`: the project's own Lingo compiler writes your changes into
+  `build/ttbattleblitz/web/game.dir`, ready to play in the browser. No Adobe Director needed
+  ([docs/LINGO.md](docs/LINGO.md)). For art, sound or new cast members, open
+  `src/ttbattleblitz/movies/game.dir` in Adobe Director (8.5–12) and republish (Shockwave or a
+  Windows/macOS projector). Or run it through an open-source Director player such as
+  ScummVM's Director engine or dirplayer-rs (web). For a native port, translate the Lingo
+  classes to your engine; the code is cleanly object-oriented.
 - **Flash hub:** run `build/internal.swf` in Ruffle (`platforms/web/`), or open the XFL in
   Adobe Animate.
 

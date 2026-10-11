@@ -91,6 +91,25 @@ verify_director() {
     status=1
   fi
 
+  # Writing the compiled scripts back must reproduce each movie exactly (scripts/lingo/LingoBuild.java).
+  local build_bad=0 built=0
+  for f in "$movies"/*.dir "$movies"/*.cst; do
+    [[ -f "$f" ]] || continue
+    base="$(basename "$f")"
+    [[ -d "$movies/${base%.*}" ]] || continue
+    director_java LingoBuild "$f" "$movies/${base%.*}" "$work/rebuilt-$base" >/dev/null
+    if ! cmp -s "$f" "$work/rebuilt-$base"; then
+      echo "  $base: rebuilding it from its Lingo source changes the file"
+      build_bad=1
+    fi
+    built=$((built + 1))
+  done
+  if [[ $build_bad -eq 0 ]]; then
+    echo "  build:   OK ($built movies/casts rebuild byte-identical from source)"
+  else
+    status=1
+  fi
+
   local assets="$SRC_DIR/$name/assets"
   if [[ -d "$assets" ]]; then
     local errors pngs wavs

@@ -3,29 +3,10 @@
 # Usage: scripts/build.sh [name ...]   (default: everything in original/)
 #
 # Flash:    src/<name>/swf.xml + src/<name>/scripts -> build/<name>.swf
-# Director: src/<name>/movies -> build/<name>/web/, the decompiled movie and casts with the
-#           dirplayer compatibility patches below applied (platforms/web/shockwave.html plays it).
+# Director: src/<name>/movies -> build/<name>/web/: the movies and casts, with their Lingo
+#           (src/<name>/movies/<movie>/casts/*/*.ls) compiled back in by scripts/lingo/LingoBuild.java.
+#           platforms/web/shockwave.html plays it.
 source "$(dirname "$0")/_common.sh"
-
-# Byte patches applied to the web copy of a Director movie, as "name|search hex|replace hex|count".
-# Empty: the game runs unmodified. Earlier patches here worked around dirplayer-rs 0.8.1 bugs
-# (tell sprite + go, rect.intersect, film-loop drawing); those are now fixed in the player itself
-# (patches/dirplayer, scripts/build-player.sh), so the original bytecode plays as authored.
-DIRECTOR_PATCHES=(
-)
-
-# patch_movie <in> <out> <search hex> <replace hex> -> prints the number of replacements
-patch_movie() {
-  perl -0777 -e '
-    my ($in, $out, $s, $r) = @ARGV;
-    open(my $fh, "<:raw", $in) or die "$in: $!"; my $d = do { local $/; <$fh> }; close $fh;
-    my ($sb, $rb) = (pack("H*", $s), pack("H*", $r));
-    my $n = () = $d =~ /\Q$sb\E/g;
-    $d =~ s/\Q$sb\E/$rb/g;
-    open(my $oh, ">:raw", $out) or die "$out: $!"; print $oh $d; close $oh;
-    print $n;
-  ' "$1" "$2" "$3" "$4"
-}
 
 build_swf() {
   local name="$1" src="$SRC_DIR/$1"
@@ -46,24 +27,16 @@ build_director() {
   echo "== $name (Director)"
   rm -rf "$out"
   mkdir -p "$out"
-  cp "$movies"/*.cst "$out"/ 2>/dev/null || true
-  local f base p pname search replace want got tmp
-  for f in "$movies"/*.dir; do
+  local f base
+  for f in "$movies"/*.dir "$movies"/*.cst; do
     [[ -f "$f" ]] || continue
     base="$(basename "$f")"
-    cp "$f" "$out/$base"
-    for p in "${DIRECTOR_PATCHES[@]}"; do
-      IFS='|' read -r pname search replace want <<< "$p"
-      tmp="$out/.$base.tmp"
-      got="$(patch_movie "$out/$base" "$tmp" "$search" "$replace")"
-      mv -f "$tmp" "$out/$base"
-      if [[ "$got" -gt 0 ]]; then
-        echo "  $base: patch $pname applied $got time(s)"
-        if [[ "$got" -ne "$want" && "$base" == "game.dir" ]]; then
-          echo "  warning: expected $want for game.dir (different game version?)" >&2
-        fi
-      fi
-    done
+    if [[ -d "$movies/${base%.*}" ]]; then
+      # compile the Lingo source (with any edits) back into the movie
+      director_java LingoBuild "$f" "$movies/${base%.*}" "$out/$base"
+    else
+      cp "$f" "$out/$base"
+    fi
   done
   echo "  built -> build/$name/web/"
 }

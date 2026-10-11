@@ -10,6 +10,7 @@ turns that source back into Director bytecode, so edited scripts don't need Adob
 | `LingoCompiler.java` | lexer, parser and code generator: `.ls` source → handlers, bytecode, literals, name ids |
 | `LingoRoundTrip.java` | compiles every `.ls` of a movie and compares the result with the movie's bytecode, handler by handler |
 | `LingoFixups.java` | corrects ProjectorRays mistakes in the `.ls` files, using the bytecode (run by `decompile`) |
+| `LingoBuild.java` | compiles a movie's `.ls` files and writes them back into the movie (run by `build`) |
 
 ```bash
 scripts/verify.sh       # ... compile: OK (375 scripts compile back to identical bytecode)
@@ -86,3 +87,32 @@ and the stale ones are never run.
   In `DEBUG`, `put RETURN after classNames` is really `put RETURN after out1`.
   48 lines in `MovieScript 230 - DEBUG.ls` are affected; the game's other scripts don't use
   this form. The `.lasm` listings keep ProjectorRays' comments.
+
+## Writing scripts back into a movie
+
+`LingoBuild` (run by `scripts/build`) compiles every `.ls` file and serializes each script in
+Director's `Lscr` layout, which `LingoScript` reads:
+
+- header (92 bytes), property and global name tables, handler records (42 bytes; 46 with
+  `LctX`, which adds the stack height), then per handler its bytecode, argument, local and
+  global tables and line table, each padded to an even offset, then the literal records and
+  literal data (strings and floats with a length word), then the handler-vector table;
+- the handler-vector table lists event handlers by slot (0 `mouseDown`, 1 `mouseUp`,
+  2 `keyDown`, 3 `keyUp`, 5 `prepareFrame`, 7 `mouseEnter`, 8 `mouseLeave`, 12 `stopMovie`,
+  15 `exitFrame`). The header holds the slot count and a bitmask of the slots used;
+- an unchanged handler keeps its original source position and line table. An edited one has
+  none: the line table maps bytecode to lines of the original source text, which the
+  movie no longer has.
+
+Names the compiler hasn't seen before are appended to the `Lnam` chunk. Only chunks whose
+content changed are replaced. The other chunks keep their order and the gaps between them,
+and the memory map is updated, so an unedited movie comes out byte-identical. `verify`
+checks that ("build: OK"). Padding bytes are the exception: Director left uninitialised
+memory in a few of them, and a script that differs from the original only there counts as
+unchanged.
+
+Limits: scripts are compiled into the script members that already exist. New script members
+and art or sound changes still need Director.
+
+`build` compiles the `.ls` files over whatever scripts the movie holds. If you edit scripts
+inside Director instead, decompile the saved movie again so the `.ls` files match it.

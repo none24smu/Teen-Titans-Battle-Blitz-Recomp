@@ -28,16 +28,27 @@ quit the match.
 
 - `scripts/setup` installs the dirplayer-rs web polyfill (pinned, checksum-verified) into
   `tools/dirplayer/`.
-- `scripts/build` writes `build/ttbattleblitz/web/`, the decompiled movie plus one
-  compatibility patch. dirplayer runs `tell sprite(n) … go(1) … end tell` against the
-  whole movie instead of the sprite, so hovering START sent the game back to frame 1 in an
-  endless loop. The patch skips that rewind in the two places it appears (START button,
-  fighter-select logo).
+- `scripts/build` writes `build/ttbattleblitz/web/`: the decompiled movies with their Lingo
+  source compiled back in (see below). The game itself is unmodified; where dirplayer-rs
+  0.8.1 differs from Director it's fixed in the player (`scripts/build-player`,
+  [PLAYER.md](PLAYER.md)).
 - `scripts/serve` serves the repo locally. Browsers refuse to load movies from `file://`.
   It also resolves the `.cct` cast names the movie asks for to the unprotected `.cst` files.
 - The page forwards keyboard input to the player even when it doesn't have focus, and runs
   the game in Shockwave "plugin" mode. The projector code path stops on the title screen.
 
+### Editing the Lingo without Director
+
+The `.ls` files are the source of truth. Edit any of them, run `scripts/build`, and reload
+the page: `build` compiles every script with the project's Lingo compiler
+([LINGO.md](LINGO.md)) and writes the changed ones into `build/ttbattleblitz/web/game.dir`.
+Unedited scripts compile to the original bytecode byte for byte, so an unedited build is
+identical to the decompiled movie (`scripts/verify` checks this).
+
+For example, in `casts/Lingo/ParentScript 134 - Class_Globals.ls` change
+`ROUND_DURATION = 90` to `42`, then rebuild, and rounds last 42 seconds. New variables,
+strings and handlers work too. Adding new script members or changing art and sound still
+needs Director.
 ### 2. Open-source Director players (Linux, web, handhelds)
 
 - **ScummVM** has a Director engine that runs many D2–D5 titles, with D6+ work in progress.

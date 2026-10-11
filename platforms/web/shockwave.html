@@ -30,8 +30,8 @@
   <script>
     // Plays a Director game through dirplayer-rs (scripts/setup installs it into tools/).
     //   default             build/<game>/web/game.dir (scripts/build: the decompiled movie with
-    //                       dirplayer compatibility patches), else src/<game>/movies/game.dir
-    //   ?from=src           the unpatched decompiled movie
+    //                       your Lingo edits compiled in), else src/<game>/movies/game.dir
+    //   ?from=src           the decompiled movie as is
     //   ?from=original      original/<game>/game.dcr
     //   ?runmode=projector  report "Projector" instead of "Plugin" to the game's Lingo
     //   ?game=<name>        game folder (default ttbattleblitz)
@@ -56,7 +56,7 @@
         const r = await fetch(sources.build, { method: "HEAD" });
         if (r.ok) return sources.build;
       } catch (e) {}
-      console.warn("No patched build found; run scripts/build. Using the unpatched decompiled movie.");
+      console.warn("No build found; run scripts/build. Using the decompiled movie in src/.");
       return sources.src;
     }
 

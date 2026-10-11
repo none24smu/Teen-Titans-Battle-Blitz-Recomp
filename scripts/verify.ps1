@@ -108,6 +108,27 @@ function Test-Director([string]$Name) {
         Write-Host "  compile: OK ($scripts scripts compile back to identical bytecode)"
     }
 
+    # Writing the compiled scripts back must reproduce each movie exactly (scripts\lingo\LingoBuild.java).
+    $buildBad = $false
+    $built = 0
+    foreach ($f in Get-ChildItem -File $movies | Where-Object { @('.dir', '.cst') -contains $_.Extension.ToLower() }) {
+        $scriptDir = Join-Path $movies $f.BaseName
+        if (-not (Test-Path $scriptDir -PathType Container)) { continue }
+        $rebuilt = Join-Path $work "rebuilt-$($f.Name)"
+        Invoke-DirectorJava LingoBuild @($f.FullName, $scriptDir, $rebuilt) (Join-Path $work "$($f.BaseName).build.txt") | Out-Null
+        $same = (Test-Path $rebuilt) -and ((Get-FileHash $f.FullName).Hash -eq (Get-FileHash $rebuilt).Hash)
+        if (-not $same) {
+            Write-Host "  $($f.Name): rebuilding it from its Lingo source changes the file"
+            $buildBad = $true
+        }
+        $built++
+    }
+    if ($buildBad) {
+        $script:failed = $true
+    } else {
+        Write-Host "  build:   OK ($built movies/casts rebuild byte-identical from source)"
+    }
+
     $assets = Join-Path $SrcDir "$Name\assets"
     if (Test-Path $assets) {
         $errors = @(Get-ChildItem -Recurse -File -Filter cast.json $assets | Where-Object { (Get-Content -Raw $_.FullName) -match '"error"' }).Count
