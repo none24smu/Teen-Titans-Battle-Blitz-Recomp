@@ -261,17 +261,35 @@ public class LingoCompiler {
                 return new Assign(target, v);
             }
             p = save;
+            if (at("go") && !peek(1).is("(")) return goStmt();
             Expr e = expr();
-            if (e instanceof Var && peek().t != T.NL) {
-                // command form: name arg, arg
+            if (e instanceof Var) {
+                // command form: name [arg, arg]
                 List<Expr> args = new ArrayList<>();
-                args.add(expr());
-                while (accept(",")) args.add(expr());
+                if (peek().t != T.NL) {
+                    args.add(expr());
+                    while (accept(",")) args.add(expr());
+                }
                 endLine();
                 return new ExprStmt(new Call(((Var) e).name, args));
             }
             endLine();
             return new ExprStmt(e);
+        }
+
+        /** go [to] [frame] f [of movie m]  /  go [to] movie m */
+        Stmt goStmt() {
+            expect("go");
+            accept("to");
+            List<Expr> args = new ArrayList<>();
+            if (accept("movie")) { args.add(new IntLit(1)); args.add(expr()); }
+            else {
+                accept("frame");
+                args.add(expr());
+                if (accept("of")) { expect("movie"); args.add(expr()); }
+            }
+            endLine();
+            return new ExprStmt(new Call("go", args));
         }
 
         Stmt ifStmt() {
@@ -586,7 +604,7 @@ public class LingoCompiler {
     // opcodes (multi-byte ones are the base 0x40-0x7f value)
     static final int RET = 0x01, PUSHZERO = 0x03, MUL = 0x04, ADD = 0x05, SUB = 0x06, DIV = 0x07, MOD = 0x08,
         INV = 0x09, JOINSTR = 0x0a, JOINPADSTR = 0x0b, LT = 0x0c, LTEQ = 0x0d, NTEQ = 0x0e, EQ = 0x0f, GT = 0x10,
-        GTEQ = 0x11, AND = 0x12, OR = 0x13, NOT = 0x14, CONTAINSSTR = 0x15, CONTAINS0STR = 0x16, STARTTELL = 0x1c,
+        GTEQ = 0x11, AND = 0x12, OR = 0x13, NOT = 0x14, CONTAINSSTR = 0x15, CONTAINS0STR = 0x16, GETCHUNK = 0x17, STARTTELL = 0x1c,
         ENDTELL = 0x1d, PUSHLIST = 0x1e, PUSHPROPLIST = 0x1f;
     static final int PUSHINT8 = 0x41, PUSHARGLISTNORET = 0x42, PUSHARGLIST = 0x43, PUSHCONS = 0x44, PUSHSYMB = 0x45,
         GETGLOBAL = 0x49, GETPROP = 0x4a, GETPARAM = 0x4b, GETLOCAL = 0x4c, SETGLOBAL = 0x4f, SETPROP = 0x50,
@@ -813,6 +831,10 @@ public class LingoCompiler {
             if (t instanceof The && ((The) t).of == null && ANIM_PROPS.containsKey(((The) t).prop.toLowerCase())) {
                 expr(a.value); op(PUSHINT8, ANIM_PROPS.get(((The) t).prop.toLowerCase())); op(SET, 7); return;
             }
+            if (t instanceof The && ((The) t).of != null) {
+                // the prop of obj = v  ==  obj.prop = v
+                expr(((The) t).of); expr(a.value); op(SETOBJPROP, names.id(((The) t).prop)); return;
+            }
             if (t instanceof The && ((The) t).of == null) { expr(a.value); op(SETMOVIEPROP, names.id(((The) t).prop)); return; }
             if (t instanceof Index) {
                 Index ix = (Index) t;
@@ -1030,6 +1052,7 @@ public class LingoCompiler {
             else if (e instanceof Not) { expr(((Not) e).e); op(NOT); }
             else if (e instanceof Neg) { expr(((Neg) e).e); op(INV); }
             else if (e instanceof The) the((The) e);
+            else if (e instanceof Chunk) chunk((Chunk) e);
             else throw new ParseError("cannot compile expression " + e.getClass().getSimpleName());
         }
 
@@ -1080,6 +1103,21 @@ public class LingoCompiler {
             for (Expr a : c.args) expr(a);
             op(statement ? PUSHARGLISTNORET : PUSHARGLIST, c.args.size() + 1);
             op(OBJCALL, names.id(c.name));
+        }
+
+        /** char/word/item/line a [to b] of ...: the eight bounds (0 when unused), the string, getchunk. */
+        void chunk(Chunk c) {
+            Map<String, Chunk> chunks = new HashMap<>();
+            Expr t = c;
+            while (t instanceof Chunk) { chunks.put(((Chunk) t).type, (Chunk) t); t = ((Chunk) t).of; }
+            for (String type : new String[] {"char", "word", "item", "line"}) {
+                Chunk k = chunks.get(type);
+                if (k == null) { op(PUSHZERO); op(PUSHZERO); continue; }
+                expr(k.first);
+                if (k.last == null) op(PUSHZERO); else expr(k.last);
+            }
+            expr(t);
+            op(GETCHUNK);
         }
 
         void objProp(ObjProp p) {

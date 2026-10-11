@@ -116,3 +116,8 @@ and art or sound changes still need Director.
 
 `build` compiles the `.ls` files over whatever scripts the movie holds. If you edit scripts
 inside Director instead, decompile the saved movie again so the `.ls` files match it.
+
+Beyond what the game uses, the compiler also accepts common Lingo a modder may write:
+`char/word/item/line a [to b] of s` (read and `put … into`), bare commands such as
+`updateStage`, `go [to] [frame] x [of movie m]`, and `the prop of obj = v`. Their encodings
+follow ProjectorRays' reading of Director bytecode; the game's own scripts can't confirm them.
