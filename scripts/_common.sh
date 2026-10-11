@@ -50,18 +50,25 @@ projectorrays() {
   "$PROJECTORRAYS" "$@"
 }
 
-# Exports a Director movie/cast's assets (scripts/extract/DirectorExtract.java), compiling the
-# extractor into tools/ the first time or when its source changed.
-director_extract() {
-  local src="$ROOT/scripts/extract/DirectorExtract.java" classes="$TOOLS_DIR/extract"
-  if [[ ! -f "$classes/DirectorExtract.class" || "$src" -nt "$classes/DirectorExtract.class" ]]; then
+# Runs one of the Java tools (scripts/extract, scripts/lingo), compiling them into tools/java the
+# first time or when a source changed. Usage: director_java <Class> [args...]
+director_java() {
+  local classes="$TOOLS_DIR/java" stamp="$TOOLS_DIR/java/.built" stale=0 src
+  local sources=("$ROOT"/scripts/extract/*.java "$ROOT"/scripts/lingo/*.java)
+  [[ -f "$stamp" ]] || stale=1
+  for src in "${sources[@]}"; do [[ "$src" -nt "$stamp" ]] && stale=1; done
+  if (( stale )); then
     local javac="javac"
     [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/javac" ]] && javac="$JAVA_HOME/bin/javac"
     mkdir -p "$classes"
-    "$javac" -nowarn -d "$classes" "$src"
+    "$javac" -encoding UTF-8 -nowarn -d "$classes" "${sources[@]}"
+    touch "$stamp"
   fi
-  "$JAVA" -cp "$classes" DirectorExtract "$1" "$2"
+  "$JAVA" -cp "$classes" "$@"
 }
+
+# Exports a Director movie/cast's assets (scripts/extract/DirectorExtract.java).
+director_extract() { director_java DirectorExtract "$1" "$2"; }
 
 sha256_of() {
   local s

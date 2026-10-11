@@ -75,8 +75,10 @@ bit depth the game uses (1, 2, 4, 8, 16, 32); frame labels, frame scripts, sprit
 blend values and span behaviors against the running game. Not exported yet: shape members
 and the one Xtra member, which remain in the `.dir`.
 
-`verify` re-decompiles the unprotected files and checks the Lingo comes out identical, and
-checks that no member failed to export.
+`verify` re-decompiles the unprotected files and checks the Lingo comes out identical,
+compiles every script back with the project's own Lingo compiler and checks it gives the
+original bytecode byte for byte (all 375), and checks that no member failed to export.
+How the compiler works and what it fixes in ProjectorRays' output: [docs/LINGO.md](docs/LINGO.md).
 Architecture notes: [docs/BATTLE_BLITZ.md](docs/BATTLE_BLITZ.md).
 
 **Flash SWF** (`original/internal.swf` → `src/internal/`):

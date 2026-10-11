@@ -57,6 +57,7 @@ verify_director() {
     [[ -f "$f" ]] || continue
     base="$(basename "$f")"; base="${base%.*}"
     projectorrays decompile "$f" -o "$work" --dump-scripts >/dev/null
+    if [[ -d "$work/$base" ]]; then director_java LingoFixups "$f" "$work/$base" >/dev/null; fi
     if [[ -d "$movies/$base" || -d "$work/$base" ]]; then
       if ! diff -r "$movies/$base" "$work/$base" >/dev/null 2>&1; then
         echo "  $base: Lingo differs after re-decompiling"
@@ -73,10 +74,27 @@ verify_director() {
     status=1
   fi
 
+  # Every script must compile back to the movie's own bytecode (scripts/lingo/LingoCompiler.java).
+  local compile_bad=0
+  for f in "$movies"/*.dir "$movies"/*.cst; do
+    [[ -f "$f" ]] || continue
+    base="$(basename "$f")"; base="${base%.*}"
+    [[ -d "$movies/$base" ]] || continue
+    if ! director_java LingoRoundTrip "$f" "$movies/$base" -v >"$work/$base.compile.txt" 2>&1; then
+      echo "  $base: Lingo doesn't compile back to the original bytecode (see build/.verify-$name/$base.compile.txt)"
+      compile_bad=1
+    fi
+  done
+  if [[ $compile_bad -eq 0 ]]; then
+    echo "  compile: OK ($scripts scripts compile back to identical bytecode)"
+  else
+    status=1
+  fi
+
   local assets="$SRC_DIR/$name/assets"
   if [[ -d "$assets" ]]; then
     local errors pngs wavs
-    errors=$(grep -rl '"error"' "$assets" --include=cast.json | wc -l)
+    errors=$({ grep -rl '"error"' "$assets" --include=cast.json || true; } | wc -l)
     pngs=$(find "$assets" -name '*.png' | wc -l)
     wavs=$(find "$assets" -name '*.wav' | wc -l)
     if [[ $errors -eq 0 ]]; then

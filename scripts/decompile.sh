@@ -57,6 +57,13 @@ decompile_director() {
     done
   done
 
+  # Correct what ProjectorRays gets wrong, using the bytecode (scripts/lingo/LingoFixups.java).
+  for f in "$out"/*.dir "$out"/*.cst; do
+    [[ -f "$f" ]] || continue
+    base="$(basename "$f")"; base="${base%.*}"
+    if [[ -d "$out/$base" ]]; then director_java LingoFixups "$f" "$out/$base"; fi
+  done
+
   # Art, sound, palettes, text, labels and member metadata in open formats.
   local assets="$SRC_DIR/$name/assets"
   for f in "$out"/*.dir "$out"/*.cst; do

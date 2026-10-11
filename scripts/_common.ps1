@@ -41,18 +41,32 @@ function Invoke-Ffdec {
 
 # Exports a Director movie/cast's assets (scripts/extract/DirectorExtract.java), compiling the
 # extractor into tools\ the first time or when its source changed.
-function Invoke-DirectorExtract([string]$File, [string]$OutDir) {
-    $src = Join-Path $Root 'scripts\extract\DirectorExtract.java'
-    $classes = Join-Path $ToolsDir 'extract'
-    $class = Join-Path $classes 'DirectorExtract.class'
-    if (-not (Test-Path $class) -or (Get-Item $src).LastWriteTime -gt (Get-Item $class).LastWriteTime) {
+# Runs one of the Java tools (scripts\extract, scripts\lingo), compiling them into tools\java the
+# first time or when a source changed. Returns the exit code; output goes to the host, or to $OutFile.
+function Invoke-DirectorJava([string]$Class, [string[]]$Arguments, [string]$OutFile = "") {
+    $classes = Join-Path $ToolsDir 'java'
+    $stamp = Join-Path $classes '.built'
+    $sources = @(Get-ChildItem -File (Join-Path $Root 'scripts\extract\*.java'), (Join-Path $Root 'scripts\lingo\*.java'))
+    $stale = -not (Test-Path $stamp)
+    if (-not $stale) {
+        $built = (Get-Item $stamp).LastWriteTime
+        $stale = @($sources | Where-Object { $_.LastWriteTime -gt $built }).Count -gt 0
+    }
+    if ($stale) {
         $javac = if ($env:JAVA_HOME -and (Test-Path (Join-Path $env:JAVA_HOME 'bin\javac.exe'))) { Join-Path $env:JAVA_HOME 'bin\javac.exe' } else { 'javac' }
         New-Item -ItemType Directory -Force $classes | Out-Null
-        & $javac -nowarn -d $classes $src
-        if ($LASTEXITCODE -ne 0) { throw 'Compiling DirectorExtract failed (a JDK is needed for javac).' }
+        & $javac -encoding UTF-8 -nowarn -d $classes @($sources | ForEach-Object { $_.FullName })
+        if ($LASTEXITCODE -ne 0) { throw 'Compiling the Java tools failed (a JDK is needed for javac).' }
+        Set-Content -Path $stamp -Value '' -Encoding ascii
     }
-    & $Java -cp $classes DirectorExtract $File $OutDir
-    if ($LASTEXITCODE -ne 0) { throw "Asset export failed: $File" }
+    # stderr redirected under -ErrorAction Stop would throw in PowerShell 5.1
+    $ErrorActionPreference = 'Continue'
+    if ($OutFile) { & $Java -cp $classes $Class @Arguments > $OutFile 2>&1 } else { & $Java -cp $classes $Class @Arguments | Out-Host }
+    return $LASTEXITCODE
+}
+
+function Invoke-DirectorExtract([string]$File, [string]$OutDir) {
+    if ((Invoke-DirectorJava DirectorExtract @($File, $OutDir)) -ne 0) { throw "Asset export failed: $File" }
 }
 
 function Invoke-ProjectorRays {

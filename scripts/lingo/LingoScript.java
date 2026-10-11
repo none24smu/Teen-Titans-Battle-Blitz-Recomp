@@ -87,7 +87,10 @@ public class LingoScript {
         return l;
     }
 
-    static Script readScript(byte[] b) {
+    static Script readScript(byte[] b) { return readScript(b, false); }
+
+    /** capitalX: the context chunk is LctX (Director 8.5+), whose handler records end with a 4-byte stack height. */
+    static Script readScript(byte[] b, boolean capitalX) {
         ByteBuffer bb = ByteBuffer.wrap(b).order(ByteOrder.BIG_ENDIAN);
         Script s = new Script();
         s.raw = b;
@@ -109,7 +112,7 @@ public class LingoScript {
         int litDataOffset = bb.getInt(88);
         s.propertyNames = nameTable(bb, propCount, propOffset);
         s.globalNames = nameTable(bb, globCount, globOffset);
-        int rec = 42; // handler record size before Director 8.5 (8.5+ adds a 4-byte stackHeight)
+        int rec = capitalX ? 46 : 42;
         for (int i = 0; i < handlerCount; i++) {
             int p = handlerOffset + i * rec;
             Handler h = new Handler();
@@ -122,6 +125,7 @@ public class LingoScript {
             h.unknown1 = bb.getInt(p + 30);
             h.unknown2 = bb.getShort(p + 34) & 0xffff;
             h.lineCount = bb.getShort(p + 36) & 0xffff;
+            if (capitalX) h.stackHeight = bb.getInt(p + 42);
             int lineOffset = bb.getInt(p + 38);
             h.bytecode = Arrays.copyOfRange(b, compiledOffset, compiledOffset + compiledLen);
             h.argNames = nameTable(bb, argCount, argOffset);

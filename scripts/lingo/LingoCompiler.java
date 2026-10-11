@@ -2,7 +2,7 @@
 //
 // The goal is to reproduce Macromedia's compiler exactly, so that a script decompiled by
 // ProjectorRays and compiled again here gives the original bytecode back. That lets edited
-// scripts be written into a .dir without Adobe Director (see LingoBuild.java).
+// scripts be written into a .dir without Adobe Director. docs/LINGO.md lists the rules it follows.
 //
 // Pipeline: Lexer -> Parser (AST) -> CodeGen (bytecode, literals, names).
 
@@ -49,7 +49,7 @@ public class LingoCompiler {
                 out.add(new Tok(T.STRING, src.substring(i + 1, Math.min(j, n)), line));
                 i = j + 1; continue;
             }
-            if (Character.isDigit(c) || (c == '.' && i + 1 < n && Character.isDigit(src.charAt(i + 1)))) {
+            if (Character.isDigit(c) || (c == '.' && i + 1 < n && Character.isDigit(src.charAt(i + 1)) && (i == 0 || src.charAt(i - 1) != '.'))) {
                 int j = i; boolean flt = false;
                 while (j < n && Character.isDigit(src.charAt(j))) j++;
                 if (j < n && src.charAt(j) == '.' && j + 1 < n && Character.isDigit(src.charAt(j + 1))) {
@@ -251,12 +251,17 @@ public class LingoCompiler {
                 if (accept("to") || accept("=")) { Expr v = expr(); endLine(); return new Assign(target, v); }
                 p = save;
             }
-            Expr e = expr();
-            if (accept("=")) {
+            // assignment: the target is a postfix expression (so its '=' isn't read as a comparison)
+            int save = p;
+            Expr target = null;
+            try { target = postfix(); } catch (ParseError ignored) { }
+            if (target != null && accept("=")) {
                 Expr v = expr();
                 endLine();
-                return new Assign(e, v);
+                return new Assign(target, v);
             }
+            p = save;
+            Expr e = expr();
             if (e instanceof Var && peek().t != T.NL) {
                 // command form: name arg, arg
                 List<Expr> args = new ArrayList<>();
@@ -301,7 +306,6 @@ public class LingoCompiler {
 
         /** A single statement on the same line as 'then' (stops before 'else'). */
         Stmt statementNoEnd() {
-            int save = p;
             // find 'else' on this line to cut the statement
             int q = p; int depth = 0;
             while (toks.get(q).t != T.NL && toks.get(q).t != T.EOF) {
@@ -447,7 +451,13 @@ public class LingoCompiler {
                     next();
                     List<Expr> idx = new ArrayList<>();
                     idx.add(expr());
-                    while (accept(",")) idx.add(expr());
+                    if (at(".") && peek(1).is(".")) {
+                        // range: x.char[a..b]
+                        next(); next();
+                        idx.add(expr());
+                    } else {
+                        while (accept(",")) idx.add(expr());
+                    }
                     expect("]");
                     e = new Index(e, idx);
                 } else return e;
@@ -482,20 +492,22 @@ public class LingoCompiler {
                     String w = t.s.toLowerCase();
                     if (w.equals("the") && peek().t == T.IDENT) {
                         String prop = ident();
-                        if (prop.equalsIgnoreCase("number") && at("of") && peek(1).is("castMembers")) {
-                            next(); next();
+                        if (prop.equalsIgnoreCase("number") && at("of") && peek(1).t == T.IDENT
+                                && ANIM2_PROPS.containsKey("number of " + peek(1).s.toLowerCase())) {
+                            next();
+                            String what = ident();
                             Expr lib = null;
-                            if (at("of") && peek(1).is("castLib")) { next(); next(); lib = unary(); }
-                            return new The("number of castMembers", lib);
+                            if (what.equalsIgnoreCase("castMembers") && at("of") && peek(1).is("castLib")) { next(); next(); lib = unary(); }
+                            return new The("number of " + what, lib);
                         }
                         Expr of = null;
                         if (accept("of")) of = unary();
                         return new The(prop, of);
                     }
                     if (CHUNKS.contains(w) && !at("(") && !at(".") ) {
-                        Expr first = unary();
+                        Expr first = expr();
                         Expr last = null;
-                        if (accept("to")) last = unary();
+                        if (accept("to")) last = expr();
                         expect("of");
                         Expr of = unary();
                         return new Chunk(w, first, last, of);
@@ -537,8 +549,12 @@ public class LingoCompiler {
         final List<String> list;
         final Map<String, List<Integer>> byLower = new HashMap<>();
         Set<Integer> preferred = Collections.emptySet(); // ids the original script used (for exact round trips)
+        // Director writes name operands 2 bytes wide when the name was new to the names table
+        // while that script was compiled, even if the id fits in a byte. Names from here on count as new.
+        int newFrom;
         Names(List<String> names) {
             list = new ArrayList<>(names);
+            newFrom = list.size();
             for (int i = 0; i < list.size(); i++) byLower.computeIfAbsent(list.get(i).toLowerCase(), k -> new ArrayList<>()).add(i);
         }
         int id(String name) {
@@ -575,9 +591,35 @@ public class LingoCompiler {
     static final int PUSHINT8 = 0x41, PUSHARGLISTNORET = 0x42, PUSHARGLIST = 0x43, PUSHCONS = 0x44, PUSHSYMB = 0x45,
         GETGLOBAL = 0x49, GETPROP = 0x4a, GETPARAM = 0x4b, GETLOCAL = 0x4c, SETGLOBAL = 0x4f, SETPROP = 0x50,
         SETPARAM = 0x51, SETLOCAL = 0x52, JMP = 0x53, ENDREPEAT = 0x54, JMPIFZ = 0x55, LOCALCALL = 0x56,
-        EXTCALL = 0x57, PUT = 0x59, GET = 0x5c, SET = 0x5d, GETMOVIEPROP = 0x5f, SETMOVIEPROP = 0x60,
+        EXTCALL = 0x57, PUT = 0x59, PUTCHUNK = 0x5a, GET = 0x5c, SET = 0x5d, GETMOVIEPROP = 0x5f, SETMOVIEPROP = 0x60,
         GETOBJPROP = 0x61, SETOBJPROP = 0x62, TELLCALL = 0x63, PEEK = 0x64, POP = 0x65, THEBUILTIN = 0x66,
         OBJCALL = 0x67, PUSHINT32 = 0x6f;
+
+    /** Opcodes whose operand Director widens to 2 bytes from 32 up. */
+    static final Set<Integer> SMALL_OPS = new HashSet<>(Arrays.asList(PUSHARGLIST, PUSHARGLISTNORET, ENDREPEAT, PUT, PUTCHUNK));
+
+    /** Opcodes whose operand is a name id. */
+    static final Set<Integer> NAME_OPS = new HashSet<>(Arrays.asList(PUSHSYMB, GETGLOBAL, SETGLOBAL, GETPROP, SETPROP,
+        EXTCALL, OBJCALL, GETMOVIEPROP, SETMOVIEPROP, GETOBJPROP, SETOBJPROP, TELLCALL, THEBUILTIN));
+
+    /** Movie properties read and written by number (get/set 7), numbered as in Director. */
+    static final Map<String, Integer> ANIM_PROPS = new HashMap<>();
+    /** Counts read by number (get 8). */
+    static final Map<String, Integer> ANIM2_PROPS = new HashMap<>();
+    static {
+        String[] anim = {null, "beepOn", "buttonStyle", "centerStage", "checkBoxAccess", "checkboxType", "colorDepth",
+            "colorQD", "exitLock", "fixStageSize", "fullColorPermit", "imageDirect", "doubleClick", "key", "lastClick",
+            "lastEvent", "keyCode", "lastKey", "lastRoll", "timeoutLapsed", "multiSound", "pauseState",
+            "quickTimePresent", "selEnd", "selStart", "soundEnabled", "soundLevel", "stageColor", null,
+            "switchColorDepth", "timeoutKeyDown", "timeoutLength", "timeoutMouse", "timeoutPlay", "timer",
+            "preLoadRAM", "videoForWindowsPresent", "netPresent", "safePlayer", "soundKeepDevice", "soundMixMedia"};
+        for (int i = 0; i < anim.length; i++) if (anim[i] != null) ANIM_PROPS.put(anim[i].toLowerCase(), i);
+        String[] anim2 = {null, "perFrameHook", "number of castMembers", "number of menus", "number of castLibs", "number of xtras"};
+        for (int i = 0; i < anim2.length; i++) if (anim2[i] != null) ANIM2_PROPS.put(anim2[i].toLowerCase(), i);
+    }
+
+    /** Built-in functions that are called as such even where the script defines a handler with the name. */
+    static final Set<String> BUILTIN_CALLS = new HashSet<>(Arrays.asList("new"));
 
     static final Set<String> THE_BUILTINS = new HashSet<>(Arrays.asList(
         "frame", "ticks", "stagetop", "stagebottom", "stageleft", "stageright", "key", "keycode", "mouseh", "mousev",
@@ -586,21 +628,25 @@ public class LingoCompiler {
 
     static final class CodeGen {
         final Names names;
+        // Director 8 (Lctx) multiplies variable and literal numbers by 8 and writes every pushint8 2 bytes
+        // wide; 8.5 and later (LctX) use plain indexes and the smallest width.
+        final boolean d8; final int mul;
         final CompiledScript out = new CompiledScript();
-        final Map<LingoScript.Literal, Integer> literalIndex = new HashMap<>();
         ScriptDef script;
         Set<String> props = new HashSet<>(), scriptGlobals = new HashSet<>();
 
         // per handler
         ByteArrayOutputStream code;
+        HandlerDef current;
         List<String> args, locals;
         Set<String> globals;
         Deque<Loop> loops = new ArrayDeque<>();
         boolean inTell;
+        int stackItems; // values case and repeat-in statements keep on the stack
 
         static final class Loop { int nextTarget = -1; List<Integer> exitPatches = new ArrayList<>(), nextPatches = new ArrayList<>(); }
 
-        CodeGen(Names names) { this.names = names; }
+        CodeGen(Names names, boolean d8) { this.names = names; this.d8 = d8; mul = d8 ? 8 : 1; }
 
         CompiledScript compile(ScriptDef s) {
             script = s;
@@ -614,9 +660,15 @@ public class LingoCompiler {
 
         void op(int op) { code.write(op); }
 
-        /** Operand width: jumps and pushint8 always use 2 bytes; others the smallest that fits. */
+        /**
+         * Operand width: forward jumps and pushint8 always use 2 bytes, and so do names new to this
+         * script. Argument counts, loop-back distances and put modes switch to 2 bytes from 32 up.
+         * Everything else uses the smallest width that fits.
+         */
         void op(int base, int arg) {
-            boolean forceWide = base == JMP || base == JMPIFZ || base == ENDREPEAT || base == PUSHINT8;
+            boolean forceWide = base == JMP || base == JMPIFZ || (base == PUSHINT8 && d8)
+                || (NAME_OPS.contains(base) && arg >= names.newFrom)
+                || (SMALL_OPS.contains(base) && arg >= 32);
             if (!forceWide && arg >= 0 && arg <= 0xff) { code.write(base); code.write(arg); }
             else if (arg >= -0x8000 && arg <= 0xffff && !(base != PUSHINT8 && arg < 0)) {
                 code.write(base + 0x40); code.write((arg >> 8) & 0xff); code.write(arg & 0xff);
@@ -625,6 +677,8 @@ public class LingoCompiler {
                 code.write((arg >>> 24) & 0xff); code.write((arg >>> 16) & 0xff); code.write((arg >>> 8) & 0xff); code.write(arg & 0xff);
             }
         }
+
+        void opNarrow(int base, int arg) { code.write(base); code.write(arg); }
 
         int pos() { return code.size(); }
 
@@ -638,10 +692,10 @@ public class LingoCompiler {
             code.reset(); code.write(b, 0, b.length);
         }
 
+        /** Each use of a constant gets its own literal; Director doesn't pool them. */
         int literal(LingoScript.Literal l) {
-            Integer i = literalIndex.get(l);
-            if (i == null) { i = out.literals.size(); out.literals.add(l); literalIndex.put(l, i); }
-            return i * 8;
+            out.literals.add(l);
+            return (out.literals.size() - 1) * mul;
         }
 
         int stringLiteral(String s) { LingoScript.Literal l = new LingoScript.Literal(); l.type = 1; l.string = s; return literal(l); }
@@ -650,12 +704,13 @@ public class LingoCompiler {
 
         CompiledHandler handler(HandlerDef h) {
             code = new ByteArrayOutputStream();
+            current = h;
             args = h.args; locals = new ArrayList<>(); globals = new HashSet<>(scriptGlobals);
             List<String> handlerGlobals = new ArrayList<>();
             collectGlobals(h.body, handlerGlobals);
             for (String g : handlerGlobals) globals.add(g.toLowerCase());
             collectLocals(h.body);
-            loops.clear(); inTell = false;
+            loops.clear(); inTell = false; stackItems = 0;
             block(h.body);
             op(RET);
             CompiledHandler c = new CompiledHandler();
@@ -755,14 +810,17 @@ public class LingoCompiler {
             Expr t = a.target;
             if (t instanceof Var) { expr(a.value); setVar(((Var) t).name); return; }
             if (t instanceof ObjProp) { expr(((ObjProp) t).obj); expr(a.value); op(SETOBJPROP, names.id(((ObjProp) t).name)); return; }
+            if (t instanceof The && ((The) t).of == null && ANIM_PROPS.containsKey(((The) t).prop.toLowerCase())) {
+                expr(a.value); op(PUSHINT8, ANIM_PROPS.get(((The) t).prop.toLowerCase())); op(SET, 7); return;
+            }
             if (t instanceof The && ((The) t).of == null) { expr(a.value); op(SETMOVIEPROP, names.id(((The) t).prop)); return; }
             if (t instanceof Index) {
                 Index ix = (Index) t;
                 if (ix.obj instanceof ObjProp && ix.idx.size() == 1) {
                     expr(((ObjProp) ix.obj).obj); op(PUSHSYMB, names.id(((ObjProp) ix.obj).name)); expr(ix.idx.get(0)); expr(a.value);
-                    op(PUSHARGLISTNORET, 4); op(OBJCALL, names.id("setProp"));
+                    op(PUSHARGLIST, 4); op(OBJCALL, names.id("setProp")); // Director keeps the return slot here
                 } else {
-                    expr(ix.obj); for (Expr i : ix.idx) expr(i); expr(a.value);
+                    indexBase(ix.obj); for (Expr i : ix.idx) expr(i); expr(a.value);
                     op(PUSHARGLISTNORET, ix.idx.size() + 2); op(OBJCALL, names.id("setAt"));
                 }
                 return;
@@ -790,6 +848,7 @@ public class LingoCompiler {
 
         void caseStmt(Case c) {
             expr(c.value);
+            stackItems++;
             List<Integer> toEnd = new ArrayList<>();
             for (CaseBranch b : c.branches) {
                 List<Integer> toBody = new ArrayList<>();
@@ -797,21 +856,21 @@ public class LingoCompiler {
                 for (int i = 0; i < b.labels.size(); i++) {
                     op(PEEK, 0);
                     expr(b.labels.get(i));
-                    op(EQ);
                     if (i < b.labels.size() - 1) {
-                        // more labels: jump into the body when this one matches
-                        int skip = jump(JMPIFZ);
-                        toBody.add(jump(JMP));
-                        patch(skip, pos());
-                    } else jz = jump(JMPIFZ);
+                        // more labels: straight into the body when this one matches
+                        op(NTEQ);
+                        toBody.add(jump(JMPIFZ));
+                    } else { op(EQ); jz = jump(JMPIFZ); }
                 }
                 int bodyStart = pos();
                 for (int j : toBody) patch(j, bodyStart);
                 block(b.body);
-                toEnd.add(jump(JMP));
+                // the last branch falls through to the end unless an otherwise follows
+                if (b != c.branches.get(c.branches.size() - 1) || c.otherwise != null) toEnd.add(jump(JMP));
                 patch(jz, pos());
             }
             if (c.otherwise != null) block(c.otherwise);
+            stackItems--;
             int end = pos();
             for (int j : toEnd) patch(j, end);
             op(POP, 1);
@@ -855,15 +914,15 @@ public class LingoCompiler {
             Loop loop = new Loop(); loops.push(loop);
             expr(r.list);
             op(PEEK, 0); op(PUSHARGLIST, 1); op(EXTCALL, names.id("count"));
-            op(PUSHINT8, 1);
+            opNarrow(PUSHINT8, 1); // repeat-in writes its index constants 1 byte wide
             int cond = pos();
             op(PEEK, 0); op(PEEK, 2); op(LTEQ);
             int jz = jump(JMPIFZ);
             op(PEEK, 2); op(PEEK, 1); op(PUSHARGLIST, 2); op(EXTCALL, names.id("getAt"));
             setVar(r.var);
-            block(r.body);
+            stackItems += 3; block(r.body); stackItems -= 3;
             loop.nextTarget = pos();
-            op(PUSHINT8, 1); op(ADD);
+            opNarrow(PUSHINT8, 1); op(ADD);
             int er = pos(); op(ENDREPEAT, er - cond);
             int end = pos();
             patch(jz, end);
@@ -878,7 +937,12 @@ public class LingoCompiler {
         }
 
         void returnStmt(Return r) {
-            if (r.e == null) { op(RET); return; }
+            if (r.e == null) {
+                // a bare return first drops what enclosing case and repeat-in statements keep on the stack
+                if (stackItems > 0) op(POP, stackItems);
+                op(PUSHARGLISTNORET, 0); op(EXTCALL, names.id("return"));
+                return;
+            }
             expr(r.e);
             op(PUSHARGLISTNORET, 1);
             op(EXTCALL, names.id("return"));
@@ -895,21 +959,31 @@ public class LingoCompiler {
 
         void put(Put p) {
             if (p.target == null) { expr(p.value); op(PUSHARGLISTNORET, 1); op(EXTCALL, names.id("put")); return; }
-            // put value into/after/before variable
-            if (p.target instanceof Var) {
-                int mode = p.mode.equals("into") ? 1 : p.mode.equals("after") ? 2 : 3;
-                String n = ((Var) p.target).name;
-                int varType, varId;
-                if (containsIgnoreCase(args, n)) { varType = 6; varId = indexOf(args, n) * 8; }
-                else if (globals.contains(n.toLowerCase())) { varType = 3; varId = names.id(n); }
-                else if (props.contains(n.toLowerCase())) { varType = 4; varId = names.id(n); }
-                else { varType = 5; varId = indexOf(locals, n) * 8; }
-                expr(p.value);
-                op(PUSHINT8, varId);
-                op(PUT, (mode << 4) | varType);
-                return;
+            // put value into/after/before variable, or a chunk of one: put x into char 3 of line 2 of s
+            int mode = p.mode.equals("into") ? 1 : p.mode.equals("after") ? 2 : 3;
+            Expr t = p.target;
+            Map<String, Chunk> chunks = new HashMap<>();
+            while (t instanceof Chunk) { chunks.put(((Chunk) t).type, (Chunk) t); t = ((Chunk) t).of; }
+            if (!(t instanceof Var)) throw new ParseError("line " + p.line + ": unsupported put target");
+            String n = ((Var) t).name;
+            // variable types as Director numbers them; a local is written as its plain index, a parameter
+            // as index * 8 like getparam (in D8) (ProjectorRays 0.2.0 divides both by 8, which misnames locals)
+            int varType, varId;
+            if (props.contains(n.toLowerCase())) { varType = 3; varId = names.id(n); }
+            else if (containsIgnoreCase(args, n)) { varType = 4; varId = indexOf(args, n) * mul; }
+            else if (globals.contains(n.toLowerCase())) { varType = 1; varId = names.id(n); }
+            else { addLocal(n); varType = 5; varId = indexOf(locals, n); }
+            expr(p.value);
+            if (!chunks.isEmpty()) {
+                for (String type : new String[] {"char", "word", "item", "line"}) {
+                    Chunk c = chunks.get(type);
+                    if (c == null) { op(PUSHZERO); op(PUSHZERO); continue; }
+                    expr(c.first);
+                    if (c.last == null) op(PUSHZERO); else expr(c.last);
+                }
             }
-            throw new ParseError("line " + p.line + ": unsupported put target");
+            op(PUSHINT8, varId);
+            op(chunks.isEmpty() ? PUT : PUTCHUNK, (mode << 4) | varType);
         }
 
         static int indexOf(List<String> l, String s) { for (int i = 0; i < l.size(); i++) if (l.get(i).equalsIgnoreCase(s)) return i; return -1; }
@@ -918,19 +992,19 @@ public class LingoCompiler {
 
         void getVar(String n) {
             int i;
-            if ((i = indexOf(args, n)) >= 0) op(GETPARAM, i * 8);
-            else if (props.contains(n.toLowerCase())) op(GETPROP, names.id(n));
+            if (props.contains(n.toLowerCase())) op(GETPROP, names.id(n)); // a property shadows a parameter of the same name
+            else if ((i = indexOf(args, n)) >= 0) op(GETPARAM, i * mul);
             else if (globals.contains(n.toLowerCase())) op(GETGLOBAL, names.id(n));
-            else if ((i = indexOf(locals, n)) >= 0) op(GETLOCAL, i * 8);
-            else { addLocal(n); op(GETLOCAL, indexOf(locals, n) * 8); }
+            else if ((i = indexOf(locals, n)) >= 0) op(GETLOCAL, i * mul);
+            else { addLocal(n); op(GETLOCAL, indexOf(locals, n) * mul); }
         }
 
         void setVar(String n) {
             int i;
-            if ((i = indexOf(args, n)) >= 0) op(SETPARAM, i * 8);
-            else if (props.contains(n.toLowerCase())) op(SETPROP, names.id(n));
+            if (props.contains(n.toLowerCase())) op(SETPROP, names.id(n));
+            else if ((i = indexOf(args, n)) >= 0) op(SETPARAM, i * mul);
             else if (globals.contains(n.toLowerCase())) op(SETGLOBAL, names.id(n));
-            else { addLocal(n); op(SETLOCAL, indexOf(locals, n) * 8); }
+            else { addLocal(n); op(SETLOCAL, indexOf(locals, n) * mul); }
         }
 
         // ---------------- expressions
@@ -944,7 +1018,7 @@ public class LingoCompiler {
             else if (e instanceof Var) getVar(((Var) e).name);
             else if (e instanceof Call) call((Call) e, false);
             else if (e instanceof ObjCall) objCall((ObjCall) e, false);
-            else if (e instanceof ObjProp) { expr(((ObjProp) e).obj); op(GETOBJPROP, names.id(((ObjProp) e).name)); }
+            else if (e instanceof ObjProp) objProp((ObjProp) e);
             else if (e instanceof Index) index((Index) e);
             else if (e instanceof ListLit) { for (Expr i : ((ListLit) e).items) expr(i); op(PUSHARGLIST, ((ListLit) e).items.size()); op(PUSHLIST); }
             else if (e instanceof PropListLit) {
@@ -996,27 +1070,48 @@ public class LingoCompiler {
             for (Expr a : c.args) expr(a);
             op(statement ? PUSHARGLISTNORET : PUSHARGLIST, c.args.size());
             if (inTell) op(TELLCALL, names.id(c.name));
-            else if (isLocalHandler(c.name)) op(LOCALCALL, handlerIndex(c.name));
+            // built-in functions win over a handler of the same name (new() inside a script with on new)
+            else if (isLocalHandler(c.name) && !BUILTIN_CALLS.contains(c.name.toLowerCase())) op(LOCALCALL, handlerIndex(c.name));
             else op(EXTCALL, names.id(c.name));
         }
 
         void objCall(ObjCall c, boolean statement) {
-            expr(c.obj);
+            indexBase(c.obj); // obj.list[i].method() calls through a reference
             for (Expr a : c.args) expr(a);
             op(statement ? PUSHARGLISTNORET : PUSHARGLIST, c.args.size() + 1);
             op(OBJCALL, names.id(c.name));
         }
 
-        void index(Index ix) {
-            if (ix.obj instanceof ObjProp && ix.idx.size() == 1) {
-                expr(((ObjProp) ix.obj).obj);
-                op(PUSHSYMB, names.id(((ObjProp) ix.obj).name));
-                expr(ix.idx.get(0));
-                op(PUSHARGLIST, 3);
-                op(OBJCALL, names.id("getProp"));
+        void objProp(ObjProp p) {
+            if (p.name.equalsIgnoreCase("count") && p.obj instanceof ObjProp) {
+                // obj.prop.count is count(obj, #prop)
+                ObjProp inner = (ObjProp) p.obj;
+                expr(inner.obj); op(PUSHSYMB, names.id(inner.name)); op(PUSHARGLIST, 2); op(OBJCALL, names.id(p.name));
                 return;
             }
-            expr(ix.obj);
+            expr(p.obj);
+            op(GETOBJPROP, names.id(p.name));
+        }
+
+        void index(Index ix) { index(ix, false); }
+
+        /** The list being indexed; an obj.prop[i] there is fetched by reference (getPropRef). */
+        void indexBase(Expr e) {
+            if (e instanceof Index) index((Index) e, true);
+            else expr(e);
+        }
+
+        void index(Index ix, boolean ref) {
+            if (ix.obj instanceof ObjProp && ix.idx.size() <= 2) {
+                // obj.prop[i] and obj.prop[a..b]: obj, #prop, bounds
+                expr(((ObjProp) ix.obj).obj);
+                op(PUSHSYMB, names.id(((ObjProp) ix.obj).name));
+                for (Expr i : ix.idx) expr(i);
+                op(PUSHARGLIST, 2 + ix.idx.size());
+                op(OBJCALL, names.id(ref ? "getPropRef" : "getProp"));
+                return;
+            }
+            indexBase(ix.obj);
             for (Expr i : ix.idx) expr(i);
             op(PUSHARGLIST, ix.idx.size() + 1);
             op(OBJCALL, names.id("getAt"));
@@ -1034,12 +1129,14 @@ public class LingoCompiler {
 
         void the(The t) {
             String p = t.prop;
-            if (p.equals("number of castMembers")) {
-                // castLib (0 = all), then property 2 of the animation-2 group
-                if (t.of == null) op(PUSHZERO); else expr(t.of);
-                op(PUSHINT8, 2); op(GET, 8);
+            Integer id = ANIM2_PROPS.get(p.toLowerCase());
+            if (id != null) {
+                // the number of castMembers takes a castLib (0 = all)
+                if (p.equalsIgnoreCase("number of castMembers")) { if (t.of == null) op(PUSHZERO); else expr(t.of); }
+                op(PUSHINT8, id); op(GET, 8);
                 return;
             }
+            if (t.of == null && (id = ANIM_PROPS.get(p.toLowerCase())) != null) { op(PUSHINT8, id); op(GET, 7); return; }
             if (t.of == null) {
                 if (THE_BUILTINS.contains(p.toLowerCase())) { op(PUSHARGLIST, 0); op(THEBUILTIN, names.id(p)); }
                 else op(GETMOVIEPROP, names.id(p));
@@ -1051,7 +1148,10 @@ public class LingoCompiler {
         }
     }
 
-    public static CompiledScript compile(ScriptDef s, Names names) { return new CodeGen(names).compile(s); }
+    public static CompiledScript compile(ScriptDef s, Names names) { return compile(s, names, true); }
+
+    /** d8: Director 8 bytecode (an Lctx context); false for 8.5 and later (LctX). */
+    public static CompiledScript compile(ScriptDef s, Names names, boolean d8) { return new CodeGen(names, d8).compile(s); }
 
     static final class ByteArrayOutputStream extends java.io.ByteArrayOutputStream {
         @Override public synchronized void write(int b) { super.write(b); }

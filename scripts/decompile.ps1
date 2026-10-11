@@ -46,6 +46,14 @@ function Export-Director([string]$Name) {
         }
     }
 
+    # Correct what ProjectorRays gets wrong, using the bytecode (scripts\lingo\LingoFixups.java).
+    foreach ($f in Get-ChildItem -File $out | Where-Object { @('.dir', '.cst') -contains $_.Extension.ToLower() }) {
+        $scripts = Join-Path $out $f.BaseName
+        if (Test-Path $scripts) {
+            if ((Invoke-DirectorJava LingoFixups @($f.FullName, $scripts)) -ne 0) { throw "Lingo fix-ups failed: $($f.Name)" }
+        }
+    }
+
     # Art, sound, palettes, text, labels and member metadata in open formats.
     $assets = Join-Path $SrcDir "$Name\assets"
     foreach ($f in Get-ChildItem -File $out | Where-Object { @('.dir', '.cst') -contains $_.Extension.ToLower() }) {

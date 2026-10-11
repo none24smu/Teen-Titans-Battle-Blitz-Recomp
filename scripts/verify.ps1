@@ -75,6 +75,9 @@ function Test-Director([string]$Name) {
     $bad = $false
     foreach ($f in Get-ChildItem -File $movies | Where-Object { @('.dir', '.cst') -contains $_.Extension.ToLower() }) {
         Invoke-ProjectorRays decompile $f.FullName -o $work --dump-scripts | Out-Null
+        if (Test-Path (Join-Path $work $f.BaseName)) {
+            Invoke-DirectorJava LingoFixups @($f.FullName, (Join-Path $work $f.BaseName)) (Join-Path $work "$($f.BaseName).fixups.txt") | Out-Null
+        }
         $diffs = Compare-Trees (Join-Path $movies $f.BaseName) (Join-Path $work $f.BaseName)
         if ($diffs.Count -gt 0) {
             Write-Host "  $($f.BaseName): Lingo differs after re-decompiling"
@@ -87,6 +90,22 @@ function Test-Director([string]$Name) {
         $script:failed = $true
     } else {
         Write-Host "  lingo:   OK ($count movies/casts, $scripts scripts re-decompile identically)"
+    }
+
+    # Every script must compile back to the movie's own bytecode (scripts\lingo\LingoCompiler.java).
+    $compileBad = $false
+    foreach ($f in Get-ChildItem -File $movies | Where-Object { @('.dir', '.cst') -contains $_.Extension.ToLower() }) {
+        $scriptDir = Join-Path $movies $f.BaseName
+        if (-not (Test-Path $scriptDir)) { continue }
+        if ((Invoke-DirectorJava LingoRoundTrip @($f.FullName, $scriptDir, "-v") (Join-Path $work "$($f.BaseName).compile.txt")) -ne 0) {
+            Write-Host "  $($f.BaseName): Lingo doesn't compile back to the original bytecode (see build\.verify-$Name\$($f.BaseName).compile.txt)"
+            $compileBad = $true
+        }
+    }
+    if ($compileBad) {
+        $script:failed = $true
+    } else {
+        Write-Host "  compile: OK ($scripts scripts compile back to identical bytecode)"
     }
 
     $assets = Join-Path $SrcDir "$Name\assets"
