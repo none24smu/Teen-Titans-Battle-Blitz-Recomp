@@ -32,6 +32,7 @@ The page uses the patched player when it exists, otherwise the released one (app
 | `go` inside `tell sprite(<film loop>)` moves that loop's playhead | moved the movie's | hovering START restarted the game |
 | Film-loop sprites are drawn onto the stage with their own ink and blend, cropped to the loop | drawn into a transparent intermediate bitmap | the pulsing "selected" darkening on character select drew as solid black boxes |
 | Assigning a film-loop member gives the sprite the loop's natural size | kept the channel's old size | the animated "selected" portraits drew oversized, over their neighbours |
+| A blend the score changes partway through a sprite span takes effect on that frame, tweened or not | applied only tweened blend changes | the ending: the score, the Titans and the victory text stayed invisible, leaving only Slade's silhouette |
 
 ## Page behaviour
 

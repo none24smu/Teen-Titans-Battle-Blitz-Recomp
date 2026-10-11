@@ -66,10 +66,71 @@ index dfbbfd7..200bc43 100644
              // Use from_f64 logic for flags
              let result = Datum::build_rect(
 diff --git a/vm-rust/src/player/score.rs b/vm-rust/src/player/score.rs
-index 0890a4e..2e7a4dd 100644
+index 0890a4e..041d908 100644
 --- a/vm-rust/src/player/score.rs
 +++ b/vm-rust/src/player/score.rs
-@@ -4179,6 +4179,16 @@ fn resolve_sprite_member_assignment(
+@@ -1539,6 +1539,60 @@ impl Score {
+                     }
+                 }
+             }
++
++            // Per-frame BLEND within a span, same rule as the member: when the
++            // score's own blend for the channel changes from its previous entry
++            // in this span, Director plays the new value, tweened or not (the
++            // score stores each frame's value). The keyframe model above only
++            // applies tweened blends, so a stepped change was lost: Teen Titans
++            // Battle Blitz's win screen keeps its score digits at blend 0 for
++            // frames 970-1014 and switches them to 100 at 1015; the digits never
++            // appeared. A blend Lingo set itself (has_blend_mod) stands until
++            // the span ends, as in Director.
++            let prev_blend = |channel_number: u32, channel_idx: u16, frame_idx: u32| -> Option<i32> {
++                let span_start = self
++                    .sprite_spans
++                    .iter()
++                    .filter(|s| {
++                        s.channel_number == channel_number
++                            && s.start_frame <= frame_idx + 1
++                            && frame_idx + 1 <= s.end_frame
++                    })
++                    .map(|s| s.start_frame)
++                    .max()?;
++                self.channel_initialization_data
++                    .iter()
++                    .filter(|(f, ch, d)| *ch == channel_idx && *f < frame_idx && f + 1 >= span_start && d.cast_member != 0)
++                    .max_by_key(|(f, _, _)| *f)
++                    .map(|(_, _, d)| convert_raw_blend(d.blend, d.sprite_flags, dir_version))
++            };
++            let blend_updates: Vec<(i16, i32)> = self.channel_initialization_data
++                .iter()
++                .filter_map(|(frame_idx, channel_idx, data)| {
++                    if frame_idx + 1 != frame_num || data.cast_member == 0 {
++                        return None;
++                    }
++                    let channel_number = get_channel_number_from_index(*channel_idx as u32);
++                    if channel_number < 1 {
++                        return None;
++                    }
++                    let sprite_num = channel_number as i16;
++                    let sprite = self.get_sprite(sprite_num)?;
++                    if !sprite.entered || sprite.puppet || sprite.has_blend_mod {
++                        return None;
++                    }
++                    let blend = convert_raw_blend(data.blend, data.sprite_flags, dir_version);
++                    match prev_blend(channel_number, *channel_idx, *frame_idx) {
++                        Some(prev) if prev != blend => Some((sprite_num, blend)),
++                        _ => None,
++                    }
++                })
++                .collect();
++            for (sprite_num, blend) in blend_updates {
++                let sprite = self.get_sprite_mut(sprite_num);
++                sprite.blend = blend;
++                sprite.base_blend = blend;
++            }
+         }
+ 
+         // handle score Sound 1 + Sound 2 in Effects Channels
+@@ -4179,6 +4233,16 @@ fn resolve_sprite_member_assignment(
                      let (l, t, r, b) = flash.effective_rect();
                      Some(((r - l) as i32, (b - t) as i32))
                  }
@@ -87,7 +148,7 @@ index 0890a4e..2e7a4dd 100644
              };
              let is_film_loop = matches!(&m.member_type, CastMemberType::FilmLoop(_));
 diff --git a/vm-rust/src/player/sprite.rs b/vm-rust/src/player/sprite.rs
-index 47ce8af..22659a1 100644
+index 47ce8af..d38f186 100644
 --- a/vm-rust/src/player/sprite.rs
 +++ b/vm-rust/src/player/sprite.rs
 @@ -316,10 +316,13 @@ impl Sprite {
@@ -108,6 +169,14 @@ index 47ce8af..22659a1 100644
          // Colours are NOT reset here. Director keeps a sprite's foreColor and
          // backColor across a member swap — "if a sprite channel is not a
          // puppet, any changes that script makes to a sprite last for the life
+@@ -358,6 +361,7 @@ impl Sprite {
+         self.height = 0;
+         self.ink = 0;
+         self.blend = 100;
++        self.has_blend_mod = false; // a Lingo-set blend lasts until the span ends
+         self.rotation = 0.0;
+         self.skew = 0.0;
+         self.flip_h = false;
 diff --git a/vm-rust/src/rendering.rs b/vm-rust/src/rendering.rs
 index eea9638..376843e 100644
 --- a/vm-rust/src/rendering.rs
